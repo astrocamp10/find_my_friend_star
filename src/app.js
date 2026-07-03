@@ -816,7 +816,7 @@ function attachSkyControls() {
     const dy = event.clientY - dragState.y;
     const sensitivity = 0.13 / Math.sqrt(targetView.zoom);
     targetView.azimuth = normalizeDegrees(dragState.azimuth - dx * sensitivity);
-    targetView.altitude = clamp(dragState.altitude - dy * sensitivity, 6, 88);
+    targetView.altitude = clamp(dragState.altitude + dy * sensitivity, 6, 88);
     requestPaint();
   });
 
@@ -1418,8 +1418,9 @@ function drawConstellationLines(constellations, camera) {
 
     let labelPoint = null;
     const alpha = constellationLineAlpha(constellation.rank);
-    ctx.strokeStyle = `rgba(141, 216, 193, ${alpha})`;
-    ctx.lineWidth = constellation.rank <= 1 ? 0.95 : 0.72;
+    const touchBoost = isCoarsePointer() ? 0.08 : 0;
+    ctx.strokeStyle = `rgba(151, 226, 204, ${clamp(alpha + touchBoost, 0, 0.54)})`;
+    ctx.lineWidth = constellationLineWidth(constellation.rank);
 
     for (const line of constellation.lines) {
       drawProjectedPolyline(line, camera, (point, index) => {
@@ -1435,8 +1436,8 @@ function drawConstellationLines(constellations, camera) {
     }
 
     if (labelPoint && shouldDrawConstellationLabel(constellation) && CONSTELLATION_LABELS[constellation.id]) {
-      ctx.fillStyle = "rgba(199, 224, 209, 0.58)";
-      ctx.font = "600 11px system-ui, sans-serif";
+      ctx.fillStyle = isCoarsePointer() ? "rgba(215, 235, 222, 0.72)" : "rgba(199, 224, 209, 0.62)";
+      ctx.font = `600 ${isCoarsePointer() ? 12 : 11}px system-ui, sans-serif`;
       ctx.fillText(CONSTELLATION_LABELS[constellation.id], labelPoint.x + 8, labelPoint.y - 8);
     }
   }
@@ -1457,9 +1458,16 @@ function shouldDrawConstellationLabel(constellation) {
 }
 
 function constellationLineAlpha(rank) {
-  if (rank <= 1) return view.zoom < 1.45 ? 0.24 : 0.3;
-  if (rank === 2) return 0.15;
-  return 0.09;
+  if (rank <= 1) return view.zoom < 1.45 ? 0.34 : 0.4;
+  if (rank === 2) return 0.22;
+  return 0.14;
+}
+
+function constellationLineWidth(rank) {
+  const touch = isCoarsePointer();
+  if (rank <= 1) return touch ? 1.35 : 1.08;
+  if (rank === 2) return touch ? 1.08 : 0.86;
+  return touch ? 0.9 : 0.72;
 }
 
 function drawProjectedPolyline(line, camera, drawPoint) {
