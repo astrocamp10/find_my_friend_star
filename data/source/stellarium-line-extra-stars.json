@@ -1,0 +1,28 @@
+[
+    {
+        "id":  "102989",
+        "ra":  312.9948410351,
+        "dec":  -33.1779736393,
+        "mag":  6.06,
+        "bv":  0.018,
+        "mainId":  "* bet Mic",
+        "displayName":  "bet Mic",
+        "parallaxMas":  6.5022,
+        "parallaxErrorMas":  0.0451,
+        "spectralType":  "A1IV",
+        "source":  "SIMBAD TAP basic/allfluxes by HIP identifier"
+    },
+    {
+        "id":  "10826",
+        "ra":  34.8366337576,
+        "dec":  -2.9776376731,
+        "mag":  6.53,
+        "bv":  1.1,
+        "mainId":  "* omi Cet",
+        "displayName":  "omi Cet",
+        "parallaxMas":  10.91,
+        "parallaxErrorMas":  1.22,
+        "spectralType":  "M5/6IIIe",
+        "source":  "SIMBAD TAP basic/allfluxes by HIP identifier"
+    }
+]
