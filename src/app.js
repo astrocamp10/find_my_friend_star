@@ -751,7 +751,7 @@ async function loadNearbyStars() {
 
 async function loadSkyAtlas() {
   try {
-    const response = await fetch(new URL("../data/sky-atlas.json?v=stellarium-modern-iau-1", import.meta.url));
+    const response = await fetch(new URL("../data/sky-atlas.json?v=stellarium-western-1", import.meta.url));
     if (!response.ok) throw new Error(`별자리 데이터를 불러오지 못했습니다. (${response.status})`);
     skyAtlas = prepareSkyAtlas(await response.json());
     skyFrameCache = null;
@@ -925,7 +925,7 @@ function updateAtlasStarResult(selection) {
   directionFact.textContent = `${directionLabel(horizontal.azimuth)}쪽, 고도 ${horizontal.altitude.toFixed(1)}도`;
   colorFact.textContent = starColorDescription(star.bv);
   scienceNote.textContent =
-    "겉보기 등급은 지구에서 보이는 밝기이고, 절대등급은 별을 10파섹 거리에 둔다고 가정한 실제 밝기입니다. 별자리 선은 Stellarium modern_iau의 HIP 연결 자료를 사용합니다.";
+    "겉보기 등급은 지구에서 보이는 밝기이고, 절대등급은 별을 10파섹 거리에 둔다고 가정한 실제 밝기입니다. 별자리 선은 Stellarium western의 HIP 연결 자료를 사용합니다.";
 }
 
 function updateResult(match, targetAgeYears) {
@@ -1293,11 +1293,11 @@ function getSkyFrame(skyNow) {
   const constellations = skyAtlas.constellations.map((constellation) => ({
     id: constellation.id,
     rank: constellation.rank,
-    lines: (constellation.renderLines ?? constellation.lines).map((line) =>
-      line.map(([ra, dec]) => toHorizontal(ra, dec)),
-    ),
+    lines: (constellation.renderLines ?? constellation.lines).map((line) => ({
+      weight: line.weight ?? "normal",
+      points: (line.points ?? line).map(([ra, dec]) => toHorizontal(ra, dec)),
+    })),
   }));
-
   skyFrameCache = { key, stars, constellations };
   return skyFrameCache;
 }
@@ -1340,33 +1340,74 @@ function prepareSkyAtlas(atlas) {
     ...atlas,
     constellations: atlas.constellations.map((constellation) => ({
       ...constellation,
-      renderLines: constellation.lines.map(densifyConstellationLine),
+      renderLines: constellation.lines.map((line, index) => ({
+        weight: constellationLineWeight(constellation, line, index),
+        points: densifyConstellationLine(line.points ?? line),
+      })),
     })),
   };
 }
+
+function constellationLineWeight(constellation, line, index) {
+  return line.weight ?? constellation.lineWeights?.[index] ?? "normal";
+}
+
 function densifyConstellationLine(line) {
   if (!Array.isArray(line) || line.length < 2) return line;
 
   const points = [line[0]];
   for (let index = 1; index < line.length; index += 1) {
-    const [fromRa, fromDec] = line[index - 1];
-    const [toRa, toDec] = line[index];
-    const raDelta = shortestAngle(Number(toRa) - Number(fromRa));
-    const decDelta = Number(toDec) - Number(fromDec);
-    const averageDec = ((Number(fromDec) + Number(toDec)) / 2) * DEG_TO_RAD;
-    const angularSpan = Math.hypot(raDelta * Math.cos(averageDec), decDelta);
-    const steps = clamp(Math.ceil(angularSpan / 2.5), 1, 18);
+    const from = equatorialVector(line[index - 1]);
+    const to = equatorialVector(line[index]);
+    const angle = Math.acos(clamp(dot(from, to), -1, 1));
+    const steps = clamp(Math.ceil((angle / DEG_TO_RAD) / 2.5), 1, 24);
 
     for (let step = 1; step <= steps; step += 1) {
-      const amount = step / steps;
-      points.push([
-        normalizeDegrees(Number(fromRa) + raDelta * amount),
-        Number(fromDec) + decDelta * amount,
-      ]);
+      points.push(vectorToEquatorial(slerpVector(from, to, step / steps)));
     }
   }
 
   return points;
+}
+
+function equatorialVector(point) {
+  const [ra, dec] = point;
+  const raRad = Number(ra) * DEG_TO_RAD;
+  const decRad = Number(dec) * DEG_TO_RAD;
+  const cosDec = Math.cos(decRad);
+  return {
+    x: cosDec * Math.cos(raRad),
+    y: cosDec * Math.sin(raRad),
+    z: Math.sin(decRad),
+  };
+}
+
+function vectorToEquatorial(vector) {
+  const normalized = normalizeVector(vector);
+  return [
+    normalizeDegrees(Math.atan2(normalized.y, normalized.x) / DEG_TO_RAD),
+    Math.asin(clamp(normalized.z, -1, 1)) / DEG_TO_RAD,
+  ];
+}
+
+function slerpVector(from, to, amount) {
+  const angle = Math.acos(clamp(dot(from, to), -1, 1));
+  if (angle < 1e-5) {
+    return normalizeVector({
+      x: lerp(from.x, to.x, amount),
+      y: lerp(from.y, to.y, amount),
+      z: lerp(from.z, to.z, amount),
+    });
+  }
+
+  const sinAngle = Math.sin(angle);
+  const fromScale = Math.sin((1 - amount) * angle) / sinAngle;
+  const toScale = Math.sin(amount * angle) / sinAngle;
+  return {
+    x: from.x * fromScale + to.x * toScale,
+    y: from.y * fromScale + to.y * toScale,
+    z: from.z * fromScale + to.z * toScale,
+  };
 }
 
 function getCamera() {
@@ -1419,22 +1460,24 @@ function drawConstellationLines(constellations, camera) {
     let labelPoint = null;
     const alpha = constellationLineAlpha(constellation.rank);
     const touchBoost = isCoarsePointer() ? 0.08 : 0;
-    ctx.strokeStyle = `rgba(151, 226, 204, ${clamp(alpha + touchBoost, 0, 0.54)})`;
-    ctx.lineWidth = constellationLineWidth(constellation.rank);
 
     for (const line of constellation.lines) {
-      drawProjectedPolyline(line, camera, (point, index) => {
+      const points = line.points ?? line;
+      const lineAlpha = clamp(alpha + touchBoost + constellationLineWeightAlpha(line.weight), 0, 0.56);
+      ctx.strokeStyle = `rgba(151, 226, 204, ${lineAlpha})`;
+      ctx.lineWidth = constellationLineWidth(constellation.rank, line.weight);
+
+      drawProjectedPolyline(points, camera, (point, index) => {
         if (index === 0) ctx.moveTo(point.x, point.y);
         else ctx.lineTo(point.x, point.y);
       });
 
-      for (const horizontal of line) {
+      for (const horizontal of points) {
         if (labelPoint || horizontal.altitude < 14) continue;
         const projected = projectHorizontal(horizontal, camera, 120);
         if (projected.visible) labelPoint = projected;
       }
     }
-
     if (labelPoint && shouldDrawConstellationLabel(constellation) && CONSTELLATION_LABELS[constellation.id]) {
       ctx.fillStyle = isCoarsePointer() ? "rgba(215, 235, 222, 0.72)" : "rgba(199, 224, 209, 0.62)";
       ctx.font = `600 ${isCoarsePointer() ? 12 : 11}px system-ui, sans-serif`;
@@ -1463,11 +1506,17 @@ function constellationLineAlpha(rank) {
   return 0.14;
 }
 
-function constellationLineWidth(rank) {
+function constellationLineWeightAlpha(weight) {
+  if (weight === "thin") return -0.06;
+  if (weight === "bold") return 0.04;
+  return 0;
+}
+
+function constellationLineWidth(rank, weight = "normal") {
   const touch = isCoarsePointer();
-  if (rank <= 1) return touch ? 1.35 : 1.08;
-  if (rank === 2) return touch ? 1.08 : 0.86;
-  return touch ? 0.9 : 0.72;
+  const base = rank <= 1 ? (touch ? 1.35 : 1.08) : rank === 2 ? (touch ? 1.08 : 0.86) : (touch ? 0.9 : 0.72);
+  const scale = weight === "thin" ? 0.74 : weight === "bold" ? 1.24 : 1;
+  return base * scale;
 }
 
 function drawProjectedPolyline(line, camera, drawPoint) {

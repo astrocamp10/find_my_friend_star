@@ -3,18 +3,21 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const starsPath = path.join(root, "data", "source", "stars.6.json");
-const linesPath = path.join(root, "data", "source", "stellarium-modern-iau-index.json");
+const linesPath = path.join(root, "data", "source", "stellarium-western-index.json");
 const namesPath = path.join(root, "data", "source", "sky-atlas-star-names.json");
 const extraStarsPath = path.join(root, "data", "source", "stellarium-line-extra-stars.json");
+const rankSourcePath = path.join(root, "data", "source", "constellations.lines.json");
 const previousAtlasPath = path.join(root, "data", "sky-atlas.json");
 const outPath = path.join(root, "data", "sky-atlas.json");
 
 const starsGeo = JSON.parse(fs.readFileSync(starsPath, "utf8"));
 const stellarium = JSON.parse(fs.readFileSync(linesPath, "utf8"));
+const rankSource = fs.existsSync(rankSourcePath) ? JSON.parse(fs.readFileSync(rankSourcePath, "utf8")) : null;
 const previousAtlas = fs.existsSync(previousAtlasPath) ? JSON.parse(fs.readFileSync(previousAtlasPath, "utf8")) : null;
 const extraLineStars = fs.existsSync(extraStarsPath) ? JSON.parse(fs.readFileSync(extraStarsPath, "utf8")) : [];
 const cachedNames = fs.existsSync(namesPath) ? JSON.parse(fs.readFileSync(namesPath, "utf8")) : {};
 
+const sourceRanks = new Map((rankSource?.features ?? []).map((feature) => [feature.id, Number(feature.properties?.rank)]));
 const previousRanks = new Map((previousAtlas?.constellations ?? []).map((constellation) => [constellation.id, constellation.rank]));
 
 function normalizeRa(ra) {
@@ -106,6 +109,16 @@ function pointForHip(hip) {
   return star ? [star.ra, star.dec] : null;
 }
 
+function parseLineDefinition(sourceLine) {
+  const line = Array.isArray(sourceLine) ? sourceLine : [];
+  const weight = typeof line[0] === "string" ? line[0] : "normal";
+  const firstHipIndex = weight === "normal" ? 0 : 1;
+  const hips = line.slice(firstHipIndex)
+    .filter((item) => Number.isInteger(Number(item)))
+    .filter((hip, index, items) => index === 0 || String(hip) !== String(items[index - 1]));
+  return { weight, hips };
+}
+
 function splitLineByAvailableStars(hipLine) {
   const segments = [];
   let current = [];
@@ -130,9 +143,11 @@ const constellations = stellarium.constellations
     const id = constellationCode(constellation.id);
     const sourceLines = constellation.lines ?? [];
     const lines = [];
+    const lineWeights = [];
 
-    for (const hipLine of sourceLines) {
-      for (const hip of hipLine) {
+    for (const sourceLine of sourceLines) {
+      const { weight, hips } = parseLineDefinition(sourceLine);
+      for (const hip of hips) {
         const star = starByHip.get(String(hip));
         if (star) {
           if (!star.constellationIds.includes(id)) star.constellationIds.push(id);
@@ -140,13 +155,16 @@ const constellations = stellarium.constellations
           missingHips.add(String(hip));
         }
       }
-      lines.push(...splitLineByAvailableStars(hipLine));
+      const segments = splitLineByAvailableStars(hips);
+      lines.push(...segments);
+      lineWeights.push(...segments.map(() => weight));
     }
 
     return {
       id,
-      rank: Number(previousRanks.get(id) ?? 3),
+      rank: Number(sourceRanks.get(id) ?? previousRanks.get(id) ?? 3),
       lines,
+      lineWeights,
       sourceName: constellation.common_name?.native || constellation.common_name?.english || id,
     };
   })
@@ -157,13 +175,13 @@ for (const star of stars) {
 }
 
 const atlas = {
-  schemaVersion: "1.1.0",
+  schemaVersion: "1.2.0",
   generatedAt: new Date().toISOString(),
   source: {
-    name: "Stellarium modern_iau sky culture + D3-Celestial bright stars",
-    url: "https://github.com/Stellarium/stellarium/blob/master/skycultures/modern_iau/index.json",
+    name: "Stellarium western sky culture + D3-Celestial bright stars",
+    url: "https://github.com/Stellarium/stellarium-skycultures/blob/master/western/index.json",
     license: "Stellarium sky culture data; see upstream sky culture credits. D3-Celestial stars are BSD-3-Clause.",
-    files: ["stars.6.json", "stellarium-modern-iau-index.json", "stellarium-line-extra-stars.json", "sky-atlas-star-names.json"],
+    files: ["stars.6.json", "stellarium-western-index.json", "stellarium-line-extra-stars.json", "sky-atlas-star-names.json"],
     lineSet: {
       id: stellarium.id,
       edgesType: stellarium.edges_type ?? null,
@@ -171,7 +189,7 @@ const atlas = {
       edgesEpoch: stellarium.edges_epoch ?? null,
     },
   },
-  coordinateFrame: "J2000/ICRS-like coordinates from D3-Celestial bright stars; constellation lines from Stellarium HIP polylines",
+  coordinateFrame: "J2000/ICRS-like coordinates from D3-Celestial bright stars; constellation lines from Stellarium western HIP polylines",
   counts: {
     stars: stars.length,
     constellations: constellations.length,
