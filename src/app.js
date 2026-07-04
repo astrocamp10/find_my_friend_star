@@ -15,6 +15,7 @@ const ctx = canvas.getContext("2d");
 const form = document.querySelector("#friendForm");
 const controlPanel = document.querySelector(".control-panel");
 const resultPanel = document.querySelector(".result-panel");
+const candidateList = document.querySelector("#candidateList");
 const birthYearInput = document.querySelector("#birthYearInput");
 const birthMonthInput = document.querySelector("#birthMonthInput");
 const birthDayInput = document.querySelector("#birthDayInput");
@@ -33,12 +34,16 @@ const colorFact = document.querySelector("#colorFact");
 const factLabels = [...document.querySelectorAll(".fact-grid dt")];
 const scienceNote = document.querySelector("#scienceNote");
 const resetView = document.querySelector("#resetView");
+const helpButton = document.querySelector("#helpButton");
+const helpOverlay = document.querySelector("#helpOverlay");
+const helpClose = document.querySelector("#helpClose");
 const modeButtons = [...document.querySelectorAll(".mode-button")];
 
 const DEG_TO_RAD = Math.PI / 180;
 const LIGHT_YEARS_PER_PARSEC = 3.261563777;
 const MAX_BIRTHDAY_AGE = 120;
 const FRIEND_ATLAS_MATCH_MAX_DEGREES = 0.06;
+const VISIBLE_FRIEND_ALTITUDE_MIN = 0;
 const HORIZON_SAMPLES = Array.from({ length: 181 }, (_, index) => index * 2);
 const CONSTELLATION_LABELS = {
   And: "안드로메다",
@@ -391,6 +396,8 @@ const ATLAS_STAR_CONTEXT = {
 };
 let inputMode = "birthday";
 let selected = null;
+let friendCandidates = [];
+let activeTargetAge = null;
 let animationStart = 0;
 let view = { azimuth: 180, altitude: 35, zoom: 1 };
 let targetView = { azimuth: 180, altitude: 35, zoom: 1 };
@@ -405,6 +412,7 @@ let dragState = null;
 let pinchState = null;
 let activePointers = new Map();
 let atlasHitTargets = [];
+let constellationLineStarIdentifierIndex = { source: null, byIdentifier: new Map() };
 let preferredBirthDay = null;
 let lastPaintAt = 0;
 let renderLoopActive = false;
@@ -412,6 +420,7 @@ let resizeTimer = null;
 let lastClockSecond = "";
 let timeStatusMessage = "";
 let lastSkySyncBucket = -1;
+let helpLastFocus = null;
 
 resizeCanvas();
 window.addEventListener("resize", scheduleResizeCanvas, { passive: true });
@@ -433,6 +442,30 @@ scheduleNearbyStarPrefetch();
 attachSkyControls();
 populateBirthdayInputs();
 syncClockAndSky();
+helpButton?.addEventListener("click", () => openHelpOverlay());
+helpOverlay?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-help-close]")) closeHelpOverlay();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && helpOverlay && !helpOverlay.classList.contains("hidden")) {
+    closeHelpOverlay();
+  }
+});
+
+function openHelpOverlay() {
+  if (!helpOverlay) return;
+  helpLastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  helpOverlay.classList.remove("hidden");
+  helpButton?.setAttribute("aria-expanded", "true");
+  helpClose?.focus({ preventScroll: true });
+}
+
+function closeHelpOverlay() {
+  if (!helpOverlay) return;
+  helpOverlay.classList.add("hidden");
+  helpButton?.setAttribute("aria-expanded", "false");
+  helpLastFocus?.focus?.({ preventScroll: true });
+}
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setInputMode(button.dataset.mode, { focus: true }));
@@ -631,13 +664,14 @@ function scheduleNearbyStarPrefetch() {
   }
 }
 
-function showResultSheet() {
+function showResultSheet(options = {}) {
   document.body.classList.add("has-result");
-  resetPanelScroll(resultPanel);
+  if (!options.preserveScroll) resetPanelScroll(resultPanel);
 }
 
 function showInputSheet() {
   document.body.classList.remove("has-result");
+  resultPanel?.classList.remove("friend-result");
   resetPanelScroll(controlPanel);
 }
 
@@ -684,7 +718,7 @@ form.addEventListener("submit", async (event) => {
       ageYears: inputMode === "age" ? ageInput.value : "",
     });
     const skyNow = getSkyNow(performance.now());
-    resultTitle.textContent = "친구 별을 찾고 있어요";
+    resultTitle.textContent = "별빛 친구를 찾고 있어요";
     resultSummary.textContent = "120광년 이내 실제 별 데이터를 불러와 나이와 가장 가까운 별을 계산하고 있습니다.";
     ageFact.textContent = "계산 중";
     distanceFact.textContent = "계산 중";
@@ -692,16 +726,9 @@ form.addEventListener("submit", async (event) => {
     colorFact.textContent = "계산 중";
 
     const candidates = await loadNearbyStars();
-    selected = { ...chooseFriendStar(candidates, OBSERVATORY, targetAgeYears, skyNow), type: "friend" };
-    animationStart = performance.now();
-    targetView = {
-      azimuth: selected.horizontal.azimuth,
-      altitude: clamp(selected.horizontal.altitude, 12, 82),
-      zoom: selected.horizontal.altitude > 0 ? 4.8 : 3,
-    };
-    requestPaint();
-
-    updateResult(selected, targetAgeYears);
+    friendCandidates = chooseFriendStarCandidates(candidates, OBSERVATORY, targetAgeYears, skyNow);
+    activeTargetAge = targetAgeYears;
+    selectFriendCandidate(friendCandidates[0], targetAgeYears);
   } catch (error) {
     resultTitle.textContent = "입력값을 확인해 주세요";
     resultSummary.textContent = error.message;
@@ -710,6 +737,9 @@ form.addEventListener("submit", async (event) => {
 
 resetView.addEventListener("click", () => {
   selected = null;
+  friendCandidates = [];
+  activeTargetAge = null;
+  renderFriendCandidateList([]);
   animationStart = performance.now();
   targetView = { azimuth: 180, altitude: 35, zoom: 1 };
   showInputSheet();
@@ -905,19 +935,358 @@ function pickAtlasStar(event) {
   updateAtlasStarResult(selected);
 }
 
-function setFactLabels(labels = ["나의 자세한 나이", "거리와 밝기", "지금 방향", "별빛 색"]) {
+function setFactLabels(labels = ["나의 나이", "거리와 밝기", "지금 방향", "별빛 색"]) {
   labels.forEach((label, index) => {
     if (factLabels[index]) factLabels[index].textContent = label;
   });
 }
 
+function selectFriendCandidate(candidate, targetAgeYears = activeTargetAge, options = {}) {
+  if (!candidate) return;
+  selected = { ...candidate, type: "friend" };
+  activeTargetAge = targetAgeYears;
+  animationStart = performance.now();
+  targetView = {
+    azimuth: selected.horizontal.azimuth,
+    altitude: clamp(selected.horizontal.altitude, 12, 82),
+    zoom: selected.horizontal.altitude > 0 ? 4.8 : 3,
+  };
+  requestPaint();
+  updateResult(selected, targetAgeYears, options);
+}
+
+function chooseFriendStarCandidates(stars, location = OBSERVATORY, targetAge = 0, date = new Date()) {
+  if (!Array.isArray(stars) || stars.length === 0) {
+    throw new RangeError("stars must contain at least one star.");
+  }
+
+  const targetYears = targetAgeToYears(targetAge);
+  const scored = stars
+    .map((star, index) => scoreFriendCandidate(star, index, location, targetYears, date))
+    .filter(Boolean)
+    .sort((a, b) => a.ageGap - b.ageGap || a.score - b.score || a.index - b.index);
+  const visibleScored = scored.filter((candidate) => candidate.horizontal.altitude >= VISIBLE_FRIEND_ALTITUDE_MIN);
+  if (visibleScored.length === 0) {
+    throw new RangeError("지금 인천 하늘 위에 있는 별빛 친구 후보를 찾지 못했습니다.");
+  }
+
+  const selectedItems = [];
+  const addCandidate = (candidate, role) => {
+    if (!candidate) return;
+    const existing = selectedItems.find((item) => friendCandidateIdentityKey(item) === friendCandidateIdentityKey(candidate));
+    if (existing) {
+      if (!existing.roles.includes(role)) existing.roles.push(role);
+      return;
+    }
+    selectedItems.push({ ...candidate, roles: [role] });
+  };
+
+  addCandidate(chooseConstellationLineCandidate(visibleScored, location, targetYears, date), "별자리 별 후보");
+  addCandidate(visibleScored[0], "가장 가까운 후보");
+
+  for (const candidate of visibleScored) {
+    if (selectedItems.length >= 3) break;
+    if (selectedItems.some((item) => friendCandidateIdentityKey(item) === friendCandidateIdentityKey(candidate))) continue;
+    const hasNextRole = selectedItems.some((item) => item.roles.includes("다음 가까운 후보"));
+    addCandidate(candidate, hasNextRole ? "그다음 가까운 후보" : "다음 가까운 후보");
+  }
+
+  return selectedItems.slice(0, 3).map((candidate, index) => ({ ...candidate, candidateIndex: index }));
+}
+
+function scoreFriendCandidate(star, index, location, targetYears, date) {
+  const horizontal = equatorialToHorizontal(star, location, date);
+  const distanceLy = Number(star.distanceLy ?? star.distance ?? 0);
+  if (!Number.isFinite(distanceLy) || distanceLy <= 0) return null;
+
+  const ageGap = Math.abs(distanceLy - targetYears);
+  const skyPenalty = horizontal.altitude > 10 ? 0 : horizontal.altitude > 0 ? 0.25 : 1.25;
+  const brightnessPenalty = clamp(Number(star.gMag ?? star.magnitude ?? 8) - 8, 0, 6) * 0.035;
+  return {
+    star,
+    horizontal,
+    ageGap,
+    score: ageGap + skyPenalty + brightnessPenalty,
+    index,
+  };
+}
+
+function chooseConstellationLineCandidate(scored, location, targetYears, date) {
+  let best = null;
+  const consider = (candidate) => {
+    if (!candidate) return;
+    if (
+      !best ||
+      candidate.constellationScore < best.constellationScore ||
+      (candidate.constellationScore === best.constellationScore && candidate.index < best.index)
+    ) {
+      best = candidate;
+    }
+  };
+
+  for (const candidate of scored) {
+    const atlasStar = findConstellationLineCounterpart(candidate.star);
+    if (!isConstellationLineStar(atlasStar)) continue;
+    consider(withConstellationLineMatch(candidate, atlasStar));
+  }
+
+  for (const [index, atlasStar] of (skyAtlas.stars ?? []).entries()) {
+    consider(scoreAtlasLineCandidate(atlasStar, index, location, targetYears, date));
+  }
+
+  return best;
+}
+
+function withConstellationLineMatch(candidate, atlasStar) {
+  const constellationMatch = constellationLineMatch(atlasStar);
+  const constellationScore = constellationCandidateScore(candidate, atlasStar);
+  return { ...candidate, constellationMatch, atlasStar, constellationScore };
+}
+
+function scoreAtlasLineCandidate(atlasStar, index, location, targetYears, date) {
+  if (!isConstellationLineStar(atlasStar)) return null;
+  const distanceLy = atlasDistanceLy(atlasStar);
+  if (!Number.isFinite(distanceLy) || distanceLy <= 0 || distanceLy > MAX_BIRTHDAY_AGE) return null;
+
+  const star = friendStarFromAtlasLine(atlasStar, distanceLy);
+  const horizontal = equatorialToHorizontal(star, location, date);
+  if (horizontal.altitude < VISIBLE_FRIEND_ALTITUDE_MIN) return null;
+
+  const ageGap = Math.abs(distanceLy - targetYears);
+  const candidate = {
+    star,
+    horizontal,
+    ageGap,
+    score: ageGap,
+    index: 100000 + index,
+    constellationMatch: constellationLineMatch(atlasStar),
+    atlasStar,
+  };
+  return { ...candidate, constellationScore: constellationCandidateScore(candidate, atlasStar) };
+}
+
+function friendStarFromAtlasLine(atlasStar, distanceLy = atlasDistanceLy(atlasStar)) {
+  return {
+    sourceId: `atlas-line-${atlasStar.id}`,
+    designation: atlasStar.mainId || atlasStar.displayName || `HIP ${atlasStar.id}`,
+    displayName: atlasStar.displayName,
+    mainId: atlasStar.mainId,
+    aliases: atlasStar.aliases ?? [],
+    named: true,
+    ra: atlasStar.ra,
+    dec: atlasStar.dec,
+    distanceLy,
+    gMag: atlasStar.mag,
+    bpRp: atlasStar.bv,
+    bv: atlasStar.bv,
+    fromAtlasLine: true,
+    atlasStar,
+  };
+}
+
+function constellationCandidateScore(candidate, atlasStar) {
+  const altitudePenalty = candidate.horizontal.altitude > 10 ? 0 : 0.2;
+  const brightnessPenalty = clamp(Number(atlasStar.mag ?? candidate.star.gMag ?? 6) - 3, 0, 5) * 0.03;
+  return candidate.ageGap + altitudePenalty + brightnessPenalty;
+}
+
+function isConstellationLineStar(star) {
+  return Boolean(star?.clickable && Array.isArray(star.constellationIds) && star.constellationIds.length > 0);
+}
+
+function findConstellationLineCounterpart(star) {
+  const identifiers = starIdentifierSet(star);
+  if (!identifiers.size) return null;
+
+  const { byIdentifier } = constellationLineStarIndex();
+  const ra = Number(star.ra ?? star.raDegrees);
+  const dec = Number(star.dec ?? star.decDegrees);
+  let best = null;
+
+  for (const identifier of identifiers) {
+    const matches = byIdentifier.get(identifier);
+    if (!matches) continue;
+
+    for (const atlasStar of matches) {
+      const separation = angularSeparationDegrees(ra, dec, Number(atlasStar.ra), Number(atlasStar.dec));
+      if (!Number.isFinite(separation) || separation > 0.25) continue;
+      if (!best || separation < best.separation) best = { star: atlasStar, separation };
+    }
+  }
+
+  return best?.star ?? null;
+}
+
+function constellationLineStarIndex() {
+  if (constellationLineStarIdentifierIndex.source === skyAtlas.stars) return constellationLineStarIdentifierIndex;
+
+  const byIdentifier = new Map();
+  for (const atlasStar of skyAtlas.stars ?? []) {
+    if (!isConstellationLineStar(atlasStar)) continue;
+    for (const identifier of starIdentifierSet(atlasStar)) {
+      if (!byIdentifier.has(identifier)) byIdentifier.set(identifier, []);
+      byIdentifier.get(identifier).push(atlasStar);
+    }
+  }
+
+  constellationLineStarIdentifierIndex = { source: skyAtlas.stars, byIdentifier };
+  return constellationLineStarIdentifierIndex;
+}
+
+function constellationLineMatch(atlasStar) {
+  const constellationId = atlasStar.constellationIds?.[0];
+  return {
+    star: atlasStar,
+    separationDegrees: 0,
+    exact: true,
+    constellationId,
+    constellationName: CONSTELLATION_LABELS[constellationId] ?? constellationId ?? "별자리",
+  };
+}
+
+function closestConstellationAnchor(star) {
+  if (!Array.isArray(skyAtlas.stars) || !skyAtlas.stars.length) return null;
+  const ra = Number(star.ra ?? star.raDegrees);
+  const dec = Number(star.dec ?? star.decDegrees);
+  if (!Number.isFinite(ra) || !Number.isFinite(dec)) return null;
+
+  let best = null;
+  for (const anchor of skyAtlas.stars) {
+    if (!anchor.clickable) continue;
+    const separation = angularSeparationDegrees(ra, dec, Number(anchor.ra), Number(anchor.dec));
+    if (!Number.isFinite(separation)) continue;
+    if (!best || separation < best.separationDegrees) {
+      const constellationId = anchor.constellationIds?.[0];
+      best = {
+        star: anchor,
+        separationDegrees: separation,
+        constellationId,
+        constellationName: CONSTELLATION_LABELS[constellationId] ?? constellationId ?? "별자리",
+      };
+    }
+  }
+  return best;
+}
+
+function targetAgeToYears(age) {
+  if (Number.isFinite(Number(age))) return Number(age);
+  if (Number.isFinite(Number(age?.decimalYears))) return Number(age.decimalYears);
+  if (Number.isFinite(Number(age?.totalDays))) return Number(age.totalDays) / 365.2425;
+  return Number(age?.years ?? 0) + Number(age?.months ?? 0) / 12 + Number(age?.days ?? 0) / 365.2425;
+}
+
+function friendCandidateKey(star) {
+  return String(star?.sourceId ?? star?.designation ?? star?.id ?? "");
+}
+
+function friendCandidateIdentityKey(candidate) {
+  const atlasStar = candidate?.atlasStar ?? candidate?.star?.atlasStar;
+  if (atlasStar?.id) return `atlas:${atlasStar.id}`;
+  return `star:${friendCandidateKey(candidate?.star)}`;
+}
+
+function renderFriendCandidateList(candidates = [], activeMatch = selected) {
+  if (!candidateList) return;
+  candidateList.replaceChildren();
+  candidateList.classList.toggle("hidden", candidates.length === 0);
+  if (!candidates.length) return;
+
+  const activeKey = friendCandidateIdentityKey(activeMatch);
+  candidates.forEach((candidate, index) => {
+    const card = document.createElement("article");
+    card.className = "candidate-card";
+    card.dataset.index = String(index);
+    if (friendCandidateIdentityKey(candidate) === activeKey) card.classList.add("active");
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "candidate-card-button";
+    button.setAttribute("aria-pressed", String(friendCandidateIdentityKey(candidate) === activeKey));
+
+    const badge = document.createElement("span");
+    badge.className = "candidate-badge";
+    badge.textContent = candidate.roles.join(" · ");
+
+    const title = document.createElement("strong");
+    title.textContent = friendStarDisplayName(candidate.star);
+
+    const meta = document.createElement("span");
+    meta.className = "candidate-meta";
+    meta.textContent = friendCandidateMeta(candidate);
+
+    button.append(badge, title, meta);
+    card.append(button);
+
+    if (friendCandidateIdentityKey(candidate) === activeKey) {
+      card.append(createCandidateInlineDetails(candidate, activeTargetAge));
+    }
+
+    candidateList.append(card);
+  });
+}
+
+function friendCandidateMeta(candidate) {
+  const distance = formatDistance(candidate.star.distanceLy);
+  const ageGap = candidate.ageGap.toFixed(2);
+  const direction = `${directionLabel(candidate.horizontal.azimuth)}쪽 고도 ${candidate.horizontal.altitude.toFixed(1)}도`;
+  const constellation = candidate.constellationMatch
+    ? candidate.constellationMatch.exact
+      ? ` · ${candidate.constellationMatch.constellationName} 별자리 선`
+      : ` · ${candidate.constellationMatch.constellationName} 근처 ${candidate.constellationMatch.separationDegrees.toFixed(1)}도`
+    : "";
+  return `거리 ${distance}광년 · 차이 ${ageGap}광년 · ${direction}${constellation}`;
+}
+
+
+function createCandidateInlineDetails(candidate, targetAgeYears = activeTargetAge) {
+  const details = document.createElement("div");
+  details.className = "candidate-inline-details";
+
+  const name = friendStarDisplayName(candidate.star);
+  const summary = document.createElement("p");
+  summary.className = "candidate-inline-summary";
+  summary.textContent = `${name}${subjectMarker(name)} 나이와 별빛 거리 차이가 약 ${candidate.ageGap.toFixed(2)}광년입니다.`;
+
+  const grid = document.createElement("dl");
+  grid.className = "candidate-inline-grid";
+  const rows = [
+    ["나의 나이", targetAgeYears != null ? formatAge(targetAgeYears) : "계산 중"],
+    ["거리와 밝기", formatFriendDistanceAndBrightness(candidate.star)],
+    ["지금 방향", `${directionLabel(candidate.horizontal.azimuth)}쪽, 고도 ${candidate.horizontal.altitude.toFixed(1)}도`],
+    ["별빛 색", candidate.star.fromAtlasLine ? starColorDescription(candidate.star.bv) : describeColor(candidate.star.bpRp)],
+  ];
+
+  for (const [label, value] of rows) {
+    const item = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = label;
+    description.textContent = value;
+    item.append(term, description);
+    grid.append(item);
+  }
+
+  details.append(summary, grid);
+  return details;
+}
+candidateList?.addEventListener("click", (event) => {
+  const button = event.target.closest(".candidate-card");
+  if (!button) return;
+  const candidate = friendCandidates[Number(button.dataset.index)];
+  if (!candidate) return;
+  selectFriendCandidate(candidate, activeTargetAge, { preserveScroll: true });
+});
 function updateAtlasStarResult(selection) {
+  resultPanel?.classList.remove("friend-result");
+  friendCandidates = [];
+  activeTargetAge = null;
+  renderFriendCandidateList([]);
   showResultSheet();
   const { star, horizontal } = selection;
   const constellations = star.constellationIds?.map((id) => CONSTELLATION_LABELS[id] ?? id).join(", ") || "별자리 정보 없음";
   const name = atlasStarDisplayName(star);
 
-  setFactLabels(["별자리", "밝기 등급", "지금 방향", "별빛 색"]);
+  setFactLabels(["별자리", "거리와 밝기", "지금 방향", "별빛 색"]);
   resultTitle.textContent = name;
   resultSummary.textContent = atlasStarSummary(star, name, constellations);
   ageFact.textContent = constellations;
@@ -928,9 +1297,11 @@ function updateAtlasStarResult(selection) {
     "겉보기 등급은 지구에서 보이는 밝기이고, 절대등급은 별을 10파섹 거리에 둔다고 가정한 실제 밝기입니다. 별자리 선은 Stellarium western의 HIP 연결 자료를 사용합니다.";
 }
 
-function updateResult(match, targetAgeYears) {
-  showResultSheet();
+function updateResult(match, targetAgeYears, options = {}) {
+  resultPanel?.classList.add("friend-result");
+  showResultSheet({ preserveScroll: options.preserveScroll });
   const { star, horizontal, ageGap } = match;
+  renderFriendCandidateList(friendCandidates, match);
   const visibleText =
     horizontal.altitude > 10
       ? "지금 인천 하늘 위에 떠 있어요."
@@ -947,7 +1318,7 @@ function updateResult(match, targetAgeYears) {
   ageFact.textContent = formatAge(targetAgeYears);
   distanceFact.textContent = formatFriendDistanceAndBrightness(star);
   directionFact.textContent = `${directionLabel(horizontal.azimuth)}쪽, 고도 ${horizontal.altitude.toFixed(1)}도`;
-  colorFact.textContent = describeColor(star.bpRp);
+  colorFact.textContent = star.fromAtlasLine ? starColorDescription(star.bv) : describeColor(star.bpRp);
   scienceNote.textContent = [
     star.note,
     `${DATASET_META.release}에서 120광년 이내 별 ${nearbyMeta?.counts?.totalFullCatalog?.toLocaleString("ko-KR") ?? "18,148"}개를 내려받고, SIMBAD/CDS 식별자로 이름을 교차확인했습니다. 겉보기 등급은 Gaia G 등급, 절대등급은 Gaia 거리로 계산한 G 절대등급입니다.`,
@@ -998,7 +1369,7 @@ function atlasBrightnessSentence(star) {
   return `겉보기등급 ${magnitude.toFixed(2)}등급으로 별자리 선에서 위치를 잡아 주는 별입니다.`;
 }
 function friendStarDisplayName(star) {
-  const atlasStar = findFriendAtlasCounterpart(star);
+  const atlasStar = star?.atlasStar ?? findFriendAtlasCounterpart(star);
   if (!atlasStar) return starDisplayName(star);
   return koreanStarName(atlasStar) || starDisplayName(atlasStar);
 }
@@ -1139,10 +1510,11 @@ function subjectMarker(text) {
 function formatFriendDistanceAndBrightness(star) {
   const apparentMagnitude = Number(star.gMag);
   const absoluteMagnitude = absoluteMagnitudeFromDistance(apparentMagnitude, Number(star.distanceLy));
+  const band = star.fromAtlasLine ? "V" : "G";
   return [
     `거리 ${formatDistance(star.distanceLy)}광년`,
-    formatMagnitudeLine("겉보기등급(G)", apparentMagnitude),
-    formatMagnitudeLine("절대등급(G)", absoluteMagnitude),
+    formatMagnitudeLine(`겉보기등급(${band})`, apparentMagnitude),
+    formatMagnitudeLine(`절대등급(${band})`, absoluteMagnitude),
   ].join("\n");
 }
 
@@ -1150,9 +1522,21 @@ function formatAtlasBrightness(star) {
   const apparentMagnitude = Number(star.mag);
   const absoluteMagnitude = absoluteMagnitudeFromParallax(apparentMagnitude, Number(star.parallaxMas));
   return [
+    formatAtlasDistanceLine(star),
     formatMagnitudeLine("겉보기등급(V)", apparentMagnitude),
     formatMagnitudeLine("절대등급(V)", absoluteMagnitude),
   ].join("\n");
+}
+
+function formatAtlasDistanceLine(star) {
+  const distanceLy = atlasDistanceLy(star);
+  return Number.isFinite(distanceLy) ? `거리 ${formatDistance(distanceLy)}광년` : "거리 계산 불가";
+}
+
+function atlasDistanceLy(star) {
+  const parallaxMas = Number(star.parallaxMas);
+  if (!Number.isFinite(parallaxMas) || parallaxMas <= 0) return Number.NaN;
+  return (1000 / parallaxMas) * LIGHT_YEARS_PER_PARSEC;
 }
 
 function formatDistance(value) {
