@@ -137,82 +137,257 @@ const CONSTELLATION_LABELS = {
 };
 
 const KOREAN_PROPER_STAR_NAMES = {
+  Acamar: "아카마르",
   Achernar: "아케르나르",
   Acrux: "아크룩스",
+  Acubens: "아쿠벤스",
+  Adhafera: "아드하페라",
   Adhara: "아다라",
   Agena: "아게나",
+  Ahadi: "아하디",
+  Ain: "아인",
+  Albali: "알발리",
+  Albereo: "알비레오",
   Albireo: "알비레오",
+  Alcaid: "알카이드",
+  Alchiba: "알키바",
   Alcor: "알코르",
   Alcyone: "알키오네",
   Aldebaran: "알데바란",
   Alderamin: "알데라민",
+  Aldhanab: "알다나브",
+  Aldhibah: "알디바",
+  Alfirk: "알피르크",
+  Algedi: "알게디",
   Algenib: "알게니브",
   Algieba: "알기에바",
   Algol: "알골",
+  "Algol A": "알골 A",
+  "Algol B": "알골 B",
+  "Algol C": "알골 C",
+  Algorab: "알고라브",
   Alhena: "알헤나",
   Alioth: "알리오트",
   Alkaid: "알카이드",
+  Alkes: "알케스",
+  Almach: "알마크",
   Alnair: "알나이르",
+  Alnasl: "알나슬",
   Alnilam: "알닐람",
   Alnitak: "알니탁",
   Alphard: "알파르드",
+  Alphecca: "알페카",
   Alpheratz: "알페라츠",
+  Alpherg: "알페르그",
+  Alrescha: "알레샤",
+  Alsciaukat: "알시아우카트",
+  Alshain: "알샤인",
   Altair: "알타이르",
+  Altais: "알타이스",
+  Altaleban: "알탈레반",
+  Altarf: "알타르프",
+  Aludra: "알루드라",
+  Ancha: "안카",
   Ankaa: "안카",
+  Anser: "안세르",
   Antares: "안타레스",
   Arcturus: "아크투루스",
+  "Arkab Posterior": "아르카브 포스테리어",
+  Arneb: "아르네브",
+  Ascella: "아스셀라",
+  "Asellus Australis": "아셀루스 아우스트랄리스",
+  "Asellus Borealis": "아셀루스 보레알리스",
+  Aspidiske: "아스피디스케",
+  Atik: "아티크",
+  Atlas: "아틀라스",
   Atria: "아트리아",
   Avior: "아비오르",
+  Azha: "아자",
+  "Barnard's star": "바너드별",
+  "Baten Kaitos": "바텐 카이토스",
   Bellatrix: "벨라트릭스",
   Betelgeuse: "베텔게우스",
+  Biham: "비함",
+  Brachium: "브라키움",
   Canopus: "카노푸스",
   Capella: "카펠라",
-  Castor: "카스토르",
   Caph: "카프",
+  Castor: "카스토르",
+  "Castor AB": "카스토르 AB",
+  Cebalrai: "세발라이",
+  Chara: "카라",
+  Chertan: "체르탄",
+  Chow: "차우",
+  "Cor Caroli": "코르 카롤리",
+  Cursa: "쿠르사",
+  Dabih: "다비흐",
+  "Dabih Major": "다비흐 메이저",
   Deneb: "데네브",
+  "Deneb Algedi": "데네브 알게디",
   Denebola: "데네볼라",
+  Diadem: "디아뎀",
+  Diphda: "디프다",
+  Dschubba: "주바",
   Dubhe: "두베",
+  Edasich: "에다시크",
   Elnath: "엘나스",
+  Eltanin: "엘타닌",
   Enif: "에니프",
+  Errai: "에라이",
   Fomalhaut: "포말하우트",
+  Furud: "푸루드",
   Gacrux: "가크룩스",
+  "Gamma Cephei": "에라이",
+  Giausar: "기아우사르",
+  Gienah: "기에나",
+  "GJ 273": "루이텐의 별",
+  Gomeisa: "고메이사",
+  "Gorgonea Tertia": "고르고네아 테르티아",
+  Grumium: "그루미엄",
+  Gudja: "구자",
   Hadar: "하다르",
+  Hadir: "하디르",
   Hamal: "하말",
+  Hassaleh: "하살레",
+  Heka: "헤카",
+  Heze: "헤제",
+  Homam: "호맘",
+  Imai: "이마이",
+  Izar: "이자르",
+  Kaffaljidhma: "카팔지드마",
   Kaus: "카우스",
   "Kaus Australis": "카우스 아우스트랄리스",
+  "Kaus Borealis": "카우스 보레알리스",
+  "Kaus Media": "카우스 메디아",
+  Kitalpha: "키탈파",
+  Kochab: "코카브",
+  Kornephoros: "코르네포로스",
+  Kraz: "크라즈",
+  Lodestar: "북극성",
+  "Luyten's Star": "루이텐의 별",
+  Maasym: "마아심",
+  Mahasim: "마하심",
   Markab: "마르카브",
+  Markeb: "마르케브",
+  Matar: "마타르",
+  Mebsuta: "메브수타",
+  Megrez: "메그레즈",
+  Meissa: "메이사",
+  Mekbuda: "메크부다",
   Menkalinan: "멘칼리난",
   Menkar: "멘카르",
+  Menkent: "멘켄트",
+  Menkhib: "멘키브",
+  Menkib: "멘키브",
   Merak: "메라크",
+  Mesarthim: "메사르팀",
   Miaplacidus: "미아플라키두스",
   Mimosa: "미모사",
+  Minelauva: "미넬라우바",
+  Minkar: "민카르",
   Mintaka: "민타카",
   Mirach: "미라크",
+  Miram: "미람",
   Mirfak: "미르파크",
   Mirzam: "미르잠",
   Mizar: "미자르",
+  Mothallah: "모탈라",
+  Muliphein: "물리페인",
+  Muphrid: "무프리드",
+  Muscida: "무스키다",
+  Naos: "나오스",
+  Nashira: "나시라",
+  Nekkar: "네카르",
+  Nihal: "니할",
+  "North Star": "북극성",
   Nunki: "눈키",
+  Nusakan: "누사칸",
+  Paikauhale: "파이카우할레",
   Peacock: "피콕",
+  Phact: "팍트",
   Phecda: "페크다",
+  Pherkad: "페르카드",
   Polaris: "북극성",
+  Polis: "폴리스",
   Pollux: "폴룩스",
+  Porrima: "포리마",
+  Praecipua: "프라이시푸아",
+  "Prima Hyadum": "프리마 히아둠",
   Procyon: "프로키온",
+  "Procyon A": "프로키온 A",
+  Propus: "프로푸스",
+  "Proxima Centauri": "프록시마 센타우리",
+  Ran: "란",
+  Rana: "라나",
+  Rasalas: "라살라스",
+  Rasalgethi: "라살게티",
   Rasalhague: "라살하게",
+  Rastaban: "라스타반",
+  Regor: "레고르",
   Regulus: "레굴루스",
   Rigel: "리겔",
+  "Rigel Kentaurus": "리겔 켄타우루스",
   Rigil: "리길",
+  "Rigil Kentaurus": "리길 켄타우루스",
+  Rotanev: "로타네브",
+  Ruchbah: "루크바",
+  Rukbat: "루크바트",
+  Sabik: "사비크",
+  Sadachbia: "사다크비아",
+  Sadalbari: "사달바리",
+  Sadalmelik: "사달멜리크",
+  Sadalsuud: "사달수드",
+  Sadr: "사드르",
   Saiph: "사이프",
   Sargas: "사르가스",
+  Sarin: "사린",
+  Sceptrum: "셉트룸",
   Scheat: "셰아트",
   Schedar: "셰다르",
+  "Secunda Hyadum": "세쿤다 히아둠",
+  Segin: "세긴",
+  Seginus: "세기누스",
+  Sham: "샴",
   Shaula: "샤울라",
+  Sheliak: "셸리아크",
+  Sheratan: "셰라탄",
   Sirius: "시리우스",
+  "Sirius A": "시리우스 A",
+  Sirrah: "시라",
+  Skat: "스카트",
   Spica: "스피카",
+  Sualocin: "수알로신",
   Suhail: "수하일",
+  Sulafat: "술라파트",
+  Syrma: "시르마",
+  Tabit: "타비트",
+  Taiyangshou: "타이양쇼우",
+  Taleban: "탈레반",
+  Talitha: "탈리타",
+  "Tania Australis": "타니아 아우스트랄리스",
+  "Tania Borealis": "타니아 보레알리스",
+  Tarazed: "타라제드",
+  "Teegarden's Star": "티가든의 별",
+  Tejat: "테잣트",
+  Theemin: "테민",
+  Thuban: "투반",
   Toliman: "톨리만",
+  Torcular: "토르쿨라르",
+  Tureis: "투레이스",
+  Tyl: "틸",
+  Unukalhai: "우누칼하이",
   Vega: "베가",
+  Vindemiatrix: "빈데미아트릭스",
+  Wasat: "와사트",
+  Wazn: "와즌",
   Wezen: "웨젠",
+  "Wolf 359": "울프 359",
+  "Yed Posterior": "예드 포스터리어",
+  Yildun: "일둔",
+  Zibal: "지발",
+  Zosma: "조스마",
   Zubenelgenubi: "주베넬게누비",
+  Zubeneschamali: "주벤에샤마리",
 };
 
 const GREEK_LETTER_LABELS = {
@@ -1249,7 +1424,10 @@ function createCandidateInlineDetails(candidate, targetAgeYears = activeTargetAg
 
   const grid = document.createElement("dl");
   grid.className = "candidate-inline-grid";
+  const bayer = bayerDesignationInfo(candidate.star.atlasStar ?? candidate.star);
+  const bayerRows = bayer ? [["별자리 표기", formatBayerDescription(bayer)]] : [];
   const rows = [
+    ...bayerRows,
     ["나의 나이", targetAgeYears != null ? formatAge(targetAgeYears) : "계산 중"],
     ["거리와 밝기", formatFriendDistanceAndBrightness(candidate.star)],
     ["지금 방향", `${directionLabel(candidate.horizontal.azimuth)}쪽, 고도 ${candidate.horizontal.altitude.toFixed(1)}도`],
@@ -1284,12 +1462,13 @@ function updateAtlasStarResult(selection) {
   showResultSheet();
   const { star, horizontal } = selection;
   const constellations = star.constellationIds?.map((id) => CONSTELLATION_LABELS[id] ?? id).join(", ") || "별자리 정보 없음";
+  const bayer = bayerDesignationInfo(star);
   const name = atlasStarDisplayName(star);
 
-  setFactLabels(["별자리", "거리와 밝기", "지금 방향", "별빛 색"]);
+  setFactLabels([bayer ? "별자리 표기" : "별자리", "거리와 밝기", "지금 방향", "별빛 색"]);
   resultTitle.textContent = name;
   resultSummary.textContent = atlasStarSummary(star, name, constellations);
-  ageFact.textContent = constellations;
+  ageFact.textContent = bayer ? formatBayerDescription(bayer) : constellations;
   distanceFact.textContent = formatAtlasBrightness(star);
   directionFact.textContent = `${directionLabel(horizontal.azimuth)}쪽, 고도 ${horizontal.altitude.toFixed(1)}도`;
   colorFact.textContent = starColorDescription(star.bv);
@@ -1331,8 +1510,7 @@ function atlasStarSummary(star, displayName, constellationText) {
 
   const bayer = bayerDesignationInfo(star);
   if (bayer) {
-    const bayerName = `${bayer.greek}${bayer.number ? Number(bayer.number) : ""}`;
-    return `${displayName}${subjectMarker(displayName)} ${bayer.constellation}자리의 ${bayerName}별입니다. ${atlasBrightnessSentence(star)}`;
+    return `${displayName}${subjectMarker(displayName)} 별자리 표기로는 ${formatBayerDescription(bayer)}입니다. ${atlasBrightnessSentence(star)}`;
   }
 
   return `${displayName}${subjectMarker(displayName)} ${constellationText} 별자리 선에서 위치를 잡는 기준 별입니다. ${atlasBrightnessSentence(star)}`;
@@ -1361,6 +1539,11 @@ function bayerDesignationInfo(star) {
   return null;
 }
 
+function formatBayerDescription(bayer) {
+  if (!bayer) return "";
+  const bayerName = `${bayer.greek}${bayer.number ? Number(bayer.number) : ""}`;
+  return `${bayer.constellation}자리 ${bayerName}별`;
+}
 function atlasBrightnessSentence(star) {
   const magnitude = Number(star.mag);
   if (!Number.isFinite(magnitude)) return "별자리 선에서 다른 별들과 이어져 모양을 잡아 줍니다.";
@@ -1445,41 +1628,82 @@ function starIdentifierVariants(value) {
 function normalizeStarIdentifier(value) {
   return String(value || "")
     .replace(/^\*+\s*/i, "")
-    .replace(/^NAME\s+/i, "")
+    .replace(/^NAME(?:-IAU)?\s+/i, "")
     .replace(/[^a-z0-9.+-]+/gi, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
 }
 function starDisplayName(star) {
+  const properName = findProperStarName(star);
   const mainId = String(star.mainId || "").trim();
-  const properName = /^NAME\s+/i.test(mainId) ? cleanStarNameCandidate(mainId) : null;
   return properName || star.displayName || star.commonName || cleanStarNameCandidate(mainId) || star.designation;
 }
 
 function atlasStarDisplayName(star) {
+  const koreanProperName = findKoreanProperName(star);
+  const englishProperName = findEnglishProperName(star);
+  if (koreanProperName && englishProperName && koreanProperName !== englishProperName) return `${koreanProperName} (${englishProperName})`;
+  if (koreanProperName) return koreanProperName;
+  if (englishProperName) return englishProperName;
+
   const englishName = starDisplayName(star);
-  const koreanName = koreanStarName(star);
-  return koreanName && koreanName !== englishName ? `${koreanName} (${englishName})` : englishName;
+  const bayerName = bayerKoreanName(star);
+  return bayerName && bayerName !== englishName ? `${bayerName} (${englishName})` : englishName;
 }
 
 function koreanStarName(star) {
-  const properName = findKoreanProperName(star);
-  if (properName) return properName;
-  return bayerKoreanName(star);
+  return findProperStarName(star) || bayerKoreanName(star);
+}
+
+function findProperStarName(star) {
+  return findKoreanProperName(star) || findEnglishProperName(star);
 }
 
 function findKoreanProperName(star) {
   const names = [star.displayName, star.mainId, ...(star.aliases ?? [])].map(cleanStarNameCandidate);
   for (const name of names) {
-    if (KOREAN_PROPER_STAR_NAMES[name]) return KOREAN_PROPER_STAR_NAMES[name];
+    for (const variant of properNameLookupVariants(name)) {
+      if (KOREAN_PROPER_STAR_NAMES[variant]) return KOREAN_PROPER_STAR_NAMES[variant];
+    }
   }
   return null;
 }
 
+function findEnglishProperName(star) {
+  const names = [star.displayName, star.commonName, star.mainId, ...(star.aliases ?? [])].map(cleanStarNameCandidate);
+  for (const name of names) {
+    for (const variant of properNameLookupVariants(name)) {
+      if (isProperStarNameCandidate(variant)) return variant;
+    }
+  }
+  return null;
+}
+
+function properNameLookupVariants(name) {
+  const value = cleanStarNameCandidate(name);
+  if (!value) return [];
+  const variants = [value];
+  const withoutComponent = value.replace(/\s+(?:Aa|Ab|Ac|Ad|Ba|Bb|Bc|Bd|A|B|C|D)$/i, "").trim();
+  if (withoutComponent && withoutComponent !== value) variants.push(withoutComponent);
+  return variants;
+}
+
+function isProperStarNameCandidate(name) {
+  const value = String(name || "").trim();
+  if (!value) return false;
+  if (/^(alf|bet|gam|del|eps|zet|eta|tet|iot|kap|lam|mu\.?|nu\.?|ksi|omi|pi\.?|rho|sig|tau|ups|phi|chi|psi|ome)(\d{1,2})?\s+[A-Z][A-Za-z0-9]{2}(?:\s|$)/i.test(value)) return false;
+  if (/^(HR|HD|HIP|TYC|GJ|BD|CD|CPD|CPC|CCDM|ADS|Gaia|2MASS|1RXS|1ES|2E|AG|ASCC|FK5|SAO|BD)\b/i.test(value)) return false;
+  if (/^[A-Z]{1,4}[+-]?\d/i.test(value)) return false;
+  if (/\d/.test(value)) return false;
+  if (/[*_[\]]/.test(value)) return false;
+  if (/^[a-z]{1,4}\.?\s+[A-Z][A-Za-z0-9]{2}$/i.test(value)) return false;
+  return /[A-Za-z]/.test(value);
+}
+
 function cleanStarNameCandidate(value) {
   return String(value || "")
-    .replace(/^NAME\s+/i, "")
+    .replace(/^NAME(?:-IAU)?\s+/i, "")
     .replace(/^\*\s+/, "")
     .trim();
 }
@@ -2102,7 +2326,7 @@ function drawFriendStar(star, horizontal, active, perfNow, camera) {
     ctx.fillStyle = "rgba(255, 248, 220, 0.96)";
     ctx.font = `600 ${Math.max(14, Math.min(18, viewport.width * 0.016))}px system-ui, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(starDisplayName(star), point.x, Math.max(36, point.y - radius - 24));
+    ctx.fillText(friendStarDisplayName(star), point.x, Math.max(36, point.y - radius - 24));
   }
   ctx.restore();
 }

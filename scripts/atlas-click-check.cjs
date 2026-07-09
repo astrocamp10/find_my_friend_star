@@ -71,12 +71,13 @@ const url = process.argv[2] || "http://localhost:4173";
   const summary = await page.locator("#resultSummary").innerText();
   const firstLabel = await page.locator(".fact-grid dt").first().innerText();
   const secondLabel = await page.locator(".fact-grid dt").nth(1).innerText();
+  const constellationFact = await page.locator("#ageFact").innerText();
   const brightness = await page.locator("#distanceFact").innerText();
   const color = await page.locator("#colorFact").innerText();
   await page.screenshot({ path: "qa-atlas-click.png", fullPage: true });
   await browser.close();
 
-  const ok = title && !title.startsWith("Gaia DR3") && title.includes("(") && title.includes(target.name) && summary.includes("자리") && summary.includes("별입니다") && !summary.includes("화면의 별 크기") && firstLabel === "별자리" && secondLabel === "거리와 밝기" && brightness.includes("거리") && brightness.includes("광년") && brightness.includes("겉보기등급") && brightness.includes("절대등급") && !color.includes("B-V") && errors.length === 0;
-  console.log(JSON.stringify({ ok, target, title, summary, firstLabel, secondLabel, brightness, color, errors }, null, 2));
+  const ok = title && !title.startsWith("Gaia DR3") && title.includes("(") && title.includes(target.name) && summary.includes("자리") && summary.includes("별입니다") && !summary.includes("화면의 별 크기") && firstLabel === "별자리 표기" && constellationFact.includes("자리") && constellationFact.includes("별") && secondLabel === "거리와 밝기" && brightness.includes("거리") && brightness.includes("광년") && brightness.includes("겉보기등급") && brightness.includes("절대등급") && !color.includes("B-V") && errors.length === 0;
+  console.log(JSON.stringify({ ok, target, title, summary, firstLabel, constellationFact, secondLabel, brightness, color, errors }, null, 2));
   if (!ok) process.exit(1);
 })();
