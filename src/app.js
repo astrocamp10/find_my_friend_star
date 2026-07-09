@@ -44,7 +44,16 @@ const LIGHT_YEARS_PER_PARSEC = 3.261563777;
 const MAX_BIRTHDAY_AGE = 120;
 const FRIEND_ATLAS_MATCH_MAX_DEGREES = 0.06;
 const VISIBLE_FRIEND_ALTITUDE_MIN = 0;
+const MIN_VIEW_ALTITUDE = 6;
+const MAX_VIEW_ALTITUDE = 88;
 const HORIZON_SAMPLES = Array.from({ length: 181 }, (_, index) => index * 2);
+const LANDSCAPE_SAMPLES = Array.from({ length: 121 }, (_, index) => -120 + index * 2);
+const LANDSCAPE_PROJECTION_MARGIN = 720;
+const PANORAMA_IMAGE_URL = new URL("../assets/incheon-observatory-panorama.png", import.meta.url).href;
+const PANORAMA_AZIMUTH_OFFSET = 0;
+const PANORAMA_HORIZON_SOURCE_RATIO = 0.48;
+const PANORAMA_DRAW_SPAN_DEGREES = 128;
+const OBSERVATORY_HILL_AZIMUTH = 185;
 const CONSTELLATION_LABELS = {
   And: "안드로메다",
   Ant: "공기펌프",
@@ -583,6 +592,8 @@ let nearbyStars = [];
 let nearbyMeta = null;
 let nearbyStarsPromise = null;
 let skyFrameCache = null;
+let horizonPanoramaImage = null;
+let horizonPanoramaReady = false;
 let dragState = null;
 let pinchState = null;
 let activePointers = new Map();
@@ -613,6 +624,7 @@ document.addEventListener("visibilitychange", () => {
 });
 window.setInterval(syncClockAndSky, 1000);
 loadSkyAtlas();
+loadLandscapePanorama();
 scheduleNearbyStarPrefetch();
 attachSkyControls();
 populateBirthdayInputs();
@@ -954,6 +966,20 @@ async function loadNearbyStars() {
   return nearbyStarsPromise;
 }
 
+function loadLandscapePanorama() {
+  const image = new Image();
+  horizonPanoramaImage = image;
+  image.decoding = "async";
+  image.onload = () => {
+    horizonPanoramaReady = true;
+    requestPaint();
+  };
+  image.onerror = () => {
+    horizonPanoramaReady = false;
+    requestPaint();
+  };
+  image.src = PANORAMA_IMAGE_URL;
+}
 async function loadSkyAtlas() {
   try {
     const response = await fetch(new URL("../data/sky-atlas.json?v=stellarium-western-1", import.meta.url));
@@ -1021,7 +1047,7 @@ function attachSkyControls() {
     const dy = event.clientY - dragState.y;
     const sensitivity = 0.13 / Math.sqrt(targetView.zoom);
     targetView.azimuth = normalizeDegrees(dragState.azimuth - dx * sensitivity);
-    targetView.altitude = clamp(dragState.altitude + dy * sensitivity, 6, 88);
+    targetView.altitude = clamp(dragState.altitude + dy * sensitivity, MIN_VIEW_ALTITUDE, MAX_VIEW_ALTITUDE);
     requestPaint();
   });
 
@@ -1883,8 +1909,8 @@ function paintSky(skyNow, perfNow) {
   drawConstellationLines(skyFrame.constellations, camera);
   drawAtlasStars(skyFrame.stars, camera);
   drawFriendStars(skyNow, perfNow, camera);
+  drawGroundScene(camera, perfNow);
   drawHorizon(camera);
-  drawGroundScene(perfNow);
 }
 
 function getSkyFrame(skyNow) {
@@ -2254,44 +2280,271 @@ function drawHorizon(camera) {
   ctx.restore();
 }
 
-function drawGroundScene(perfNow) {
-  const { width, height } = viewport;
-  const groundTop = height * 0.86;
-  const gradient = ctx.createLinearGradient(0, groundTop, 0, height);
-  gradient.addColorStop(0, "#263126");
-  gradient.addColorStop(0.5, "#1b241b");
-  gradient.addColorStop(1, "#0d110d");
+function drawGroundScene(camera, perfNow) {
+  if (drawPanoramaGround(camera)) return;
 
-  ctx.save();
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.moveTo(0, groundTop + 8);
-  ctx.quadraticCurveTo(width * 0.22, groundTop - 10, width * 0.5, groundTop + 4);
-  ctx.quadraticCurveTo(width * 0.74, groundTop + 16, width, groundTop - 5);
-  ctx.lineTo(width, height);
-  ctx.lineTo(0, height);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  drawGrass(width, height, perfNow);
+  drawTerrainBand(camera, distantRidgeAltitude, {
+    alpha: 0.72,
+    edge: "rgba(170, 197, 177, 0.16)",
+    stops: [
+      [0, "rgba(40, 58, 58, 0.46)"],
+      [0.58, "rgba(25, 38, 34, 0.64)"],
+      [1, "rgba(7, 10, 9, 0.86)"],
+    ],
+  });
+  drawTerrainBand(camera, nearRidgeAltitude, {
+    alpha: 0.92,
+    edge: "rgba(214, 205, 172, 0.18)",
+    stops: [
+      [0, "rgba(37, 51, 38, 0.78)"],
+      [0.5, "rgba(22, 32, 23, 0.9)"],
+      [1, "rgba(7, 10, 7, 0.98)"],
+    ],
+  });
+  drawObservatorySilhouette(camera, perfNow);
 }
 
-function drawGrass(width, height, perfNow) {
-  const count = Math.floor(width / 34);
+function drawPanoramaGround(camera) {
+  const image = horizonPanoramaImage;
+  const sourceWidth = image?.naturalWidth || image?.width || 0;
+  const sourceHeight = image?.naturalHeight || image?.height || 0;
+  if (!horizonPanoramaReady || !sourceWidth || !sourceHeight) return false;
+
+  const sourceHorizonY = sourceHeight * PANORAMA_HORIZON_SOURCE_RATIO;
+  const step = isCoarsePointer() ? 1.6 : 0.95;
+  const centerHorizon = projectHorizontal({ azimuth: view.azimuth, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
+  if (centerHorizon.depth <= 0.04) return true;
+
+  const sourceBelowHorizon = Math.max(1, sourceHeight - sourceHorizonY);
+  const angularScale = camera.focal / (sourceWidth / (Math.PI * 2));
+  const lowestHorizonY = viewport.height / 2 + Math.tan(MIN_VIEW_ALTITUDE * DEG_TO_RAD) * camera.focal;
+  const coverScale = (viewport.height + 24 - lowestHorizonY) / sourceBelowHorizon;
+  const scale = clamp(Math.max(angularScale, coverScale), 0.72, 1.75);
+  const targetY = centerHorizon.y - sourceHorizonY * scale;
+  const targetH = sourceHeight * scale;
+
   ctx.save();
-  ctx.strokeStyle = "rgba(104, 133, 93, 0.38)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < count; i += 1) {
-    const x = i * 34 + ((i * 17) % 13);
-    const base = height - 8 - ((i * 7) % 18);
-    const sway = perfNow ? Math.sin(perfNow / 900 + i) * 2 : 0;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  for (let offset = -PANORAMA_DRAW_SPAN_DEGREES; offset < PANORAMA_DRAW_SPAN_DEGREES; offset += step) {
+    const azimuth0 = normalizeDegrees(view.azimuth + offset);
+    const azimuth1 = normalizeDegrees(view.azimuth + offset + step);
+    const horizon0 = projectHorizontal({ azimuth: azimuth0, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
+    const horizon1 = projectHorizontal({ azimuth: azimuth1, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
+    if (horizon0.depth <= 0.04 || horizon1.depth <= 0.04) continue;
+
+    const targetX = Math.min(horizon0.x, horizon1.x) - 1;
+    const targetW = Math.abs(horizon1.x - horizon0.x) + 2;
+    if (targetX > viewport.width + 80 || targetX + targetW < -80 || targetY > viewport.height + 120 || targetY + targetH < -80) continue;
+
+    const sourceX = (normalizeDegrees(azimuth0 - PANORAMA_AZIMUTH_OFFSET) / 360) * sourceWidth;
+    const sourceW = Math.max(1, (step / 360) * sourceWidth + 1);
+    drawWrappedPanoramaSlice(image, sourceX, sourceW, targetX, targetY, targetW, targetH);
+  }
+
+  ctx.restore();
+  return true;
+}
+
+function drawWrappedPanoramaSlice(image, sourceX, sourceW, targetX, targetY, targetW, targetH) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const normalizedX = ((sourceX % sourceWidth) + sourceWidth) % sourceWidth;
+  const firstW = Math.min(sourceW, sourceWidth - normalizedX);
+  const firstTargetW = targetW * (firstW / sourceW);
+  ctx.drawImage(image, normalizedX, 0, firstW, sourceHeight, targetX, targetY, firstTargetW, targetH);
+
+  const remainingW = sourceW - firstW;
+  if (remainingW > 0) {
+    ctx.drawImage(
+      image,
+      0,
+      0,
+      remainingW,
+      sourceHeight,
+      targetX + firstTargetW,
+      targetY,
+      targetW - firstTargetW,
+      targetH,
+    );
+  }
+}
+function drawTerrainBand(camera, altitudeForAzimuth, paint) {
+  const segments = projectTerrainSegments(camera, altitudeForAzimuth);
+  if (!segments.length) return;
+
+  const bottom = viewport.height + 80;
+  const gradient = ctx.createLinearGradient(0, Math.max(0, viewport.height * 0.58), 0, bottom);
+  for (const [stop, color] of paint.stops) gradient.addColorStop(stop, color);
+
+  ctx.save();
+  ctx.globalAlpha = paint.alpha ?? 1;
+  ctx.fillStyle = gradient;
+  for (const points of segments) {
+    if (points.length < 2) continue;
     ctx.beginPath();
-    ctx.moveTo(x, base);
-    ctx.lineTo(x + sway, base - 10 - (i % 7));
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length; index += 1) {
+      ctx.lineTo(points[index].x, points[index].y);
+    }
+    ctx.lineTo(points[points.length - 1].x, bottom);
+    ctx.lineTo(points[0].x, bottom);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = paint.alpha ?? 1;
+  ctx.strokeStyle = paint.edge;
+  ctx.lineWidth = 1;
+  for (const points of segments) {
+    if (points.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length; index += 1) {
+      ctx.lineTo(points[index].x, points[index].y);
+    }
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+function projectTerrainSegments(camera, altitudeForAzimuth) {
+  const segments = [];
+  let segment = [];
+
+  function finishSegment() {
+    if (segment.length > 1) segments.push(segment);
+    segment = [];
+  }
+
+  for (const offset of LANDSCAPE_SAMPLES) {
+    const azimuth = normalizeDegrees(view.azimuth + offset);
+    const point = projectHorizontal(
+      { azimuth, altitude: altitudeForAzimuth(azimuth) },
+      camera,
+      LANDSCAPE_PROJECTION_MARGIN,
+    );
+    if (!point.visible) {
+      finishSegment();
+      continue;
+    }
+    segment.push(point);
+  }
+
+  finishSegment();
+  return segments;
+}
+
+function distantRidgeAltitude(azimuth) {
+  const wave =
+    0.18 * Math.sin((azimuth + 28) * DEG_TO_RAD) +
+    0.12 * Math.sin((azimuth * 2.1 - 34) * DEG_TO_RAD);
+  return clamp(0.34 + wave + angularHill(azimuth, normalizeDegrees(OBSERVATORY_HILL_AZIMUTH - 14), 42, 0.62), -0.05, 1.65);
+}
+
+function nearRidgeAltitude(azimuth) {
+  const wave =
+    0.2 * Math.sin((azimuth - 18) * DEG_TO_RAD) +
+    0.14 * Math.sin((azimuth * 1.7 + 64) * DEG_TO_RAD);
+  const observatoryHill = angularHill(azimuth, OBSERVATORY_HILL_AZIMUTH, 25, 2.25);
+  const sideHill = angularHill(azimuth, normalizeDegrees(OBSERVATORY_HILL_AZIMUTH + 78), 36, 0.36);
+  return clamp(0.58 + wave + observatoryHill + sideHill, 0.08, 3.55);
+}
+
+function angularHill(azimuth, center, widthDegrees, heightDegrees) {
+  const distance = shortestAngle(azimuth - center);
+  return Math.exp(-(distance * distance) / (2 * widthDegrees * widthDegrees)) * heightDegrees;
+}
+
+function drawObservatorySilhouette(camera, perfNow) {
+  const hillAltitude = nearRidgeAltitude(OBSERVATORY_HILL_AZIMUTH) + 0.08;
+  const anchor = projectHorizontal({ azimuth: OBSERVATORY_HILL_AZIMUTH, altitude: hillAltitude }, camera, 240);
+  if (!anchor.visible) return;
+
+  const width = clamp((camera.focal * 0.34) / Math.max(anchor.depth, 0.28), isCoarsePointer() ? 92 : 118, isCoarsePointer() ? 156 : 226);
+  const height = width * 0.47;
+  const alpha = clamp((anchor.depth - 0.05) / 0.58, 0.62, 0.96);
+  const glow = perfNow ? 0.38 + Math.sin(perfNow / 1400) * 0.08 : 0.38;
+  const x = -width / 2;
+  const y = -height;
+
+  ctx.save();
+  ctx.translate(anchor.x, anchor.y + height * 0.08);
+  ctx.globalAlpha = alpha;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  const glassGradient = ctx.createLinearGradient(0, y, 0, 0);
+  glassGradient.addColorStop(0, "rgba(8, 15, 17, 0.96)");
+  glassGradient.addColorStop(0.46, "rgba(19, 35, 39, 0.92)");
+  glassGradient.addColorStop(1, "rgba(54, 66, 68, 0.9)");
+
+  ctx.fillStyle = "rgba(3, 6, 6, 0.5)";
+  ctx.beginPath();
+  ctx.ellipse(0, height * 0.08, width * 0.58, height * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(18, 21, 21, 0.98)";
+  ctx.fillRect(x - width * 0.2, y + height * 0.08, width * 0.28, height * 0.92);
+
+  ctx.fillStyle = glassGradient;
+  ctx.fillRect(x + width * 0.05, y, width * 0.95, height);
+  ctx.fillStyle = "rgba(158, 159, 153, 0.3)";
+  ctx.fillRect(x + width * 0.05, y, width * 0.95, height * 0.08);
+
+  ctx.strokeStyle = "rgba(191, 197, 189, 0.26)";
+  ctx.lineWidth = Math.max(0.8, width * 0.006);
+  for (let index = 1; index < 6; index += 1) {
+    const px = x + width * (0.05 + index * 0.15);
+    ctx.beginPath();
+    ctx.moveTo(px, y + height * 0.08);
+    ctx.lineTo(px, 0);
+    ctx.stroke();
+  }
+  for (let index = 1; index < 3; index += 1) {
+    const py = y + height * (0.18 + index * 0.25);
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.05, py);
+    ctx.lineTo(x + width, py);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = `rgba(86, 142, 158, ${0.16 + glow * 0.22})`;
+  ctx.fillRect(x + width * 0.55, y + height * 0.22, width * 0.3, height * 0.28);
+  ctx.fillStyle = "rgba(13, 16, 17, 0.98)";
+  ctx.fillRect(x + width * 0.33, y + height * 0.62, width * 0.22, height * 0.38);
+  ctx.fillStyle = `rgba(245, 201, 106, ${glow})`;
+  ctx.fillRect(x + width * 0.39, y + height * 0.67, width * 0.04, height * 0.08);
+
+  ctx.fillStyle = "rgba(178, 170, 153, 0.92)";
+  ctx.fillRect(x + width * 0.26, y + height * 0.42, width * 0.46, height * 0.09);
+  ctx.fillStyle = "rgba(235, 241, 230, 0.94)";
+  ctx.font = `700 ${Math.max(10, width * 0.088)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("ASTROCAMP", x + width * 0.5, y + height * 0.36);
+
+  ctx.strokeStyle = "rgba(235, 241, 230, 0.9)";
+  ctx.lineWidth = Math.max(1, width * 0.01);
+  ctx.beginPath();
+  ctx.moveTo(x + width * 0.25, y + height * 0.36);
+  ctx.lineTo(x + width * 0.31, y + height * 0.26);
+  ctx.lineTo(x + width * 0.38, y + height * 0.22);
+  ctx.moveTo(x + width * 0.31, y + height * 0.26);
+  ctx.lineTo(x + width * 0.29, y + height * 0.45);
+  ctx.moveTo(x + width * 0.31, y + height * 0.34);
+  ctx.lineTo(x + width * 0.24, y + height * 0.5);
+  ctx.moveTo(x + width * 0.31, y + height * 0.34);
+  ctx.lineTo(x + width * 0.37, y + height * 0.5);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(5, 8, 8, 0.96)";
+  ctx.fillRect(x + width * 0.16, y + height * 0.51, width * 0.76, height * 0.07);
+  ctx.fillStyle = `rgba(245, 201, 106, ${0.26 + glow * 0.36})`;
+  ctx.fillRect(x + width * 0.12, y + height * 0.78, width * 0.08, height * 0.05);
+  ctx.fillRect(x + width * 0.78, y + height * 0.18, width * 0.1, height * 0.045);
+
   ctx.restore();
 }
 
