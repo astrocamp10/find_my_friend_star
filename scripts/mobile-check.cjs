@@ -59,16 +59,6 @@ function pixelDistance(a, b) {
   );
 }
 
-async function dragRange(page, selector, fromRatio, toRatio) {
-  const box = await page.locator(selector).boundingBox();
-  if (!box) throw new Error(`Missing range box: ${selector}`);
-  const y = box.y + box.height / 2;
-  await page.mouse.move(box.x + box.width * fromRatio, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * toRatio, y, { steps: 8 });
-  await page.mouse.up();
-}
-
 async function dispatchTouchDrag(page, start, end) {
   const client = await page.context().newCDPSession(page);
   await client.send("Input.dispatchTouchEvent", {

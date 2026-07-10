@@ -25,10 +25,17 @@ jobs:
         uses: actions/checkout@v4
       - name: Configure Pages
         uses: actions/configure-pages@v5
+      - name: Prepare site artifact
+        run: |
+          mkdir -p _site/src _site/assets _site/data
+          cp index.html favicon.svg _site/
+          cp src/app.js src/astro.js src/data.js src/styles.css _site/src/
+          cp assets/incheon-observatory-panorama.png _site/assets/
+          cp data/nearby-stars-search.json data/sky-atlas.json _site/data/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "_site"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

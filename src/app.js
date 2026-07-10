@@ -1,9 +1,7 @@
 import { DATASET_META, OBSERVATORY } from "./data.js";
 import {
   calculateDetailedAge,
-  chooseFriendStar,
   clamp,
-  describeColor,
   directionLabel,
   equatorialToHorizontal,
   formatAge,
@@ -29,12 +27,14 @@ const resultTitle = document.querySelector("#resultTitle");
 const resultSummary = document.querySelector("#resultSummary");
 const ageFact = document.querySelector("#ageFact");
 const distanceFact = document.querySelector("#distanceFact");
+const brightnessFact = document.querySelector("#brightnessFact");
 const directionFact = document.querySelector("#directionFact");
-const colorFact = document.querySelector("#colorFact");
 const factLabels = [...document.querySelectorAll(".fact-grid dt")];
 const scienceNote = document.querySelector("#scienceNote");
 const resetView = document.querySelector("#resetView");
 const helpButton = document.querySelector("#helpButton");
+const skyGridToggle = document.querySelector("#skyGridToggle");
+const skyGridState = document.querySelector("#skyGridState");
 const helpOverlay = document.querySelector("#helpOverlay");
 const helpClose = document.querySelector("#helpClose");
 const modeButtons = [...document.querySelectorAll(".mode-button")];
@@ -585,6 +585,7 @@ let activeTargetAge = null;
 let animationStart = 0;
 let view = { azimuth: 180, altitude: 35, zoom: 1 };
 let targetView = { azimuth: 180, altitude: 35, zoom: 1 };
+let showHorizonGrid = false;
 let reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let viewport = { width: window.innerWidth, height: window.innerHeight };
 let skyAtlas = { stars: [], constellations: [] };
@@ -631,6 +632,12 @@ attachSkyControls();
 populateBirthdayInputs();
 syncClockAndSky();
 helpButton?.addEventListener("click", () => openHelpOverlay());
+skyGridToggle?.addEventListener("change", () => {
+  showHorizonGrid = skyGridToggle.checked;
+  if (skyGridState) skyGridState.textContent = showHorizonGrid ? "ON" : "OFF";
+  skyGridToggle.closest(".sky-grid-toggle")?.classList.toggle("active", showHorizonGrid);
+  requestPaint();
+});
 helpOverlay?.addEventListener("click", (event) => {
   if (event.target.closest("[data-help-close]")) closeHelpOverlay();
 });
@@ -910,8 +917,8 @@ form.addEventListener("submit", async (event) => {
     resultSummary.textContent = "120광년 이내 실제 별 데이터를 불러와 나이와 가장 가까운 별을 계산하고 있습니다.";
     ageFact.textContent = "계산 중";
     distanceFact.textContent = "계산 중";
+    brightnessFact.textContent = "계산 중";
     directionFact.textContent = "계산 중";
-    colorFact.textContent = "계산 중";
 
     const candidates = await loadNearbyStars();
     friendCandidates = chooseFriendStarCandidates(candidates, OBSERVATORY, targetAgeYears, skyNow);
@@ -937,8 +944,8 @@ resetView.addEventListener("click", () => {
     "하늘을 마우스나 손가락으로 드래그하면 북쪽, 동쪽, 서쪽도 둘러볼 수 있습니다.";
   ageFact.textContent = "-";
   distanceFact.textContent = "-";
+  brightnessFact.textContent = "-";
   directionFact.textContent = "-";
-  colorFact.textContent = "-";
   requestPaint();
 });
 
@@ -1139,7 +1146,7 @@ function pickAtlasStar(event) {
   updateAtlasStarResult(selected);
 }
 
-function setFactLabels(labels = ["나의 나이", "거리와 밝기", "지금 방향", "별빛 색"]) {
+function setFactLabels(labels = ["나의 나이", "거리", "밝기", "지금 방향"]) {
   labels.forEach((label, index) => {
     if (factLabels[index]) factLabels[index].textContent = label;
   });
@@ -1348,30 +1355,6 @@ function constellationLineMatch(atlasStar) {
   };
 }
 
-function closestConstellationAnchor(star) {
-  if (!Array.isArray(skyAtlas.stars) || !skyAtlas.stars.length) return null;
-  const ra = Number(star.ra ?? star.raDegrees);
-  const dec = Number(star.dec ?? star.decDegrees);
-  if (!Number.isFinite(ra) || !Number.isFinite(dec)) return null;
-
-  let best = null;
-  for (const anchor of skyAtlas.stars) {
-    if (!anchor.clickable) continue;
-    const separation = angularSeparationDegrees(ra, dec, Number(anchor.ra), Number(anchor.dec));
-    if (!Number.isFinite(separation)) continue;
-    if (!best || separation < best.separationDegrees) {
-      const constellationId = anchor.constellationIds?.[0];
-      best = {
-        star: anchor,
-        separationDegrees: separation,
-        constellationId,
-        constellationName: CONSTELLATION_LABELS[constellationId] ?? constellationId ?? "별자리",
-      };
-    }
-  }
-  return best;
-}
-
 function targetAgeToYears(age) {
   if (Number.isFinite(Number(age))) return Number(age);
   if (Number.isFinite(Number(age?.decimalYears))) return Number(age.decimalYears);
@@ -1458,9 +1441,9 @@ function createCandidateInlineDetails(candidate, targetAgeYears = activeTargetAg
   const rows = [
     ...bayerRows,
     ["나의 나이", targetAgeYears != null ? formatAge(targetAgeYears) : "계산 중"],
-    ["거리와 밝기", formatFriendDistanceAndBrightness(candidate.star)],
+    ["거리", formatFriendDistance(candidate.star)],
+    ["밝기", formatFriendBrightness(candidate.star)],
     ["지금 방향", `${directionLabel(candidate.horizontal.azimuth)}쪽, 고도 ${candidate.horizontal.altitude.toFixed(1)}도`],
-    ["별빛 색", candidate.star.fromAtlasLine ? starColorDescription(candidate.star.bv) : describeColor(candidate.star.bpRp)],
   ];
 
   for (const [label, value] of rows) {
@@ -1494,13 +1477,13 @@ function updateAtlasStarResult(selection) {
   const bayer = bayerDesignationInfo(star);
   const name = atlasStarDisplayName(star);
 
-  setFactLabels([bayer ? "별자리 표기" : "별자리", "거리와 밝기", "지금 방향", "별빛 색"]);
+  setFactLabels([bayer ? "별자리 표기" : "별자리", "거리", "밝기", "지금 방향"]);
   resultTitle.textContent = name;
   resultSummary.textContent = atlasStarSummary(star, name, constellations);
   ageFact.textContent = bayer ? formatBayerDescription(bayer) : constellations;
-  distanceFact.textContent = formatAtlasBrightness(star);
+  distanceFact.textContent = formatAtlasDistance(star);
+  brightnessFact.textContent = formatAtlasBrightness(star);
   directionFact.textContent = `${directionLabel(horizontal.azimuth)}쪽, 고도 ${horizontal.altitude.toFixed(1)}도`;
-  colorFact.textContent = starColorDescription(star.bv);
   scienceNote.textContent =
     "겉보기 등급은 지구에서 보이는 밝기이고, 절대등급은 별을 10파섹 거리에 둔다고 가정한 실제 밝기입니다. 별자리 선은 Stellarium western의 HIP 연결 자료를 사용합니다.";
 }
@@ -1524,9 +1507,9 @@ function updateResult(match, targetAgeYears, options = {}) {
   resultSummary.textContent =
     `${name}${subjectMarker(name)} 나이와 별빛 거리 차이가 약 ${ageGap.toFixed(2)}광년인 후보입니다. ${visibleText}`;
   ageFact.textContent = formatAge(targetAgeYears);
-  distanceFact.textContent = formatFriendDistanceAndBrightness(star);
+  distanceFact.textContent = formatFriendDistance(star);
+  brightnessFact.textContent = formatFriendBrightness(star);
   directionFact.textContent = `${directionLabel(horizontal.azimuth)}쪽, 고도 ${horizontal.altitude.toFixed(1)}도`;
-  colorFact.textContent = star.fromAtlasLine ? starColorDescription(star.bv) : describeColor(star.bpRp);
   scienceNote.textContent = [
     star.note,
     `${DATASET_META.release}에서 120광년 이내 별 ${nearbyMeta?.counts?.totalFullCatalog?.toLocaleString("ko-KR") ?? "18,148"}개를 내려받고, SIMBAD/CDS 식별자로 이름을 교차확인했습니다. 겉보기 등급은 Gaia G 등급, 절대등급은 Gaia 거리로 계산한 G 절대등급입니다.`,
@@ -1760,12 +1743,15 @@ function subjectMarker(text) {
   return "는";
 }
 
-function formatFriendDistanceAndBrightness(star) {
+function formatFriendDistance(star) {
+  return `${formatDistance(star.distanceLy)}광년`;
+}
+
+function formatFriendBrightness(star) {
   const apparentMagnitude = Number(star.gMag);
   const absoluteMagnitude = absoluteMagnitudeFromDistance(apparentMagnitude, Number(star.distanceLy));
   const band = star.fromAtlasLine ? "V" : "G";
   return [
-    `거리 ${formatDistance(star.distanceLy)}광년`,
     formatMagnitudeLine(`겉보기등급(${band})`, apparentMagnitude),
     formatMagnitudeLine(`절대등급(${band})`, absoluteMagnitude),
   ].join("\n");
@@ -1775,15 +1761,14 @@ function formatAtlasBrightness(star) {
   const apparentMagnitude = Number(star.mag);
   const absoluteMagnitude = absoluteMagnitudeFromParallax(apparentMagnitude, Number(star.parallaxMas));
   return [
-    formatAtlasDistanceLine(star),
     formatMagnitudeLine("겉보기등급(V)", apparentMagnitude),
     formatMagnitudeLine("절대등급(V)", absoluteMagnitude),
   ].join("\n");
 }
 
-function formatAtlasDistanceLine(star) {
+function formatAtlasDistance(star) {
   const distanceLy = atlasDistanceLy(star);
-  return Number.isFinite(distanceLy) ? `거리 ${formatDistance(distanceLy)}광년` : "거리 계산 불가";
+  return Number.isFinite(distanceLy) ? `${formatDistance(distanceLy)}광년` : "계산 불가";
 }
 
 function atlasDistanceLy(star) {
@@ -1906,7 +1891,7 @@ function paintSky(skyNow, perfNow) {
   drawAtlasStars(skyFrame.stars, camera);
   drawFriendStars(skyNow, perfNow, camera);
   drawGroundScene(camera, perfNow);
-  drawHorizon(camera);
+  if (showHorizonGrid) drawHorizon(camera);
 }
 
 function getSkyFrame(skyNow) {
@@ -2357,6 +2342,7 @@ function drawPanoramaGround(camera) {
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
+  ctx.filter = "brightness(62%) saturate(74%) contrast(108%) sepia(10%) hue-rotate(165deg)";
 
   for (let x = drawX; x < viewport.width; x += targetW) {
     if (x + targetW < -1) continue;
@@ -2418,7 +2404,19 @@ function createPanoramaRenderer(image) {
       float sourceY = u_horizonRatio - altitude / u_verticalRadians;
       if (sourceY < 0.0 || sourceY > 1.0) discard;
 
-      gl_FragColor = texture2D(u_panorama, vec2(sourceX, sourceY));
+      vec4 panorama = texture2D(u_panorama, vec2(sourceX, sourceY));
+      float luminance = dot(panorama.rgb, vec3(0.2126, 0.7152, 0.0722));
+      vec3 blueHour = vec3(luminance) * vec3(0.62, 0.72, 0.92);
+      vec3 evening = mix(panorama.rgb, blueHour, 0.42) * 0.6;
+      evening = pow(max(evening, vec3(0.0)), vec3(1.04));
+
+      float warmHighlight =
+        smoothstep(0.12, 0.38, panorama.r - panorama.b) *
+        smoothstep(0.42, 0.85, luminance);
+      evening += vec3(0.1, 0.045, 0.008) * warmHighlight;
+      evening += vec3(0.006, 0.012, 0.022) * panorama.a;
+
+      gl_FragColor = vec4(evening, panorama.a);
     }
   `;
 
@@ -2740,16 +2738,6 @@ function vectorFromHorizontal(azimuth, altitude) {
     y: Math.sin(alt),
     z: cosAlt * Math.cos(az),
   };
-}
-
-function starColorDescription(colorIndex) {
-  const value = Number(colorIndex);
-  if (!Number.isFinite(value)) return "색 정보 없음";
-  if (value < 0.1) return "푸른빛이 도는 뜨거운 별";
-  if (value < 0.8) return "흰빛 또는 옅은 노란빛의 별";
-  if (value < 1.5) return "노란빛이 따뜻한 별";
-  if (value < 2.8) return "주황빛이 강한 차가운 별";
-  return "붉은빛이 도는 매우 차가운 별";
 }
 
 function starColor(colorIndex) {

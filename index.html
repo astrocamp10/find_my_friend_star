@@ -9,7 +9,7 @@
     />
     <title>나의 별빛 친구 찾기</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./src/styles.css" />
+    <link rel="stylesheet" href="./src/styles.css?v=20260710-facts-v3" />
   </head>
   <body>
     <main class="app-shell">
@@ -25,6 +25,13 @@
       >
         ?
       </button>
+
+      <label class="sky-grid-toggle" title="동서남북 격자 표시">
+        <input id="skyGridToggle" type="checkbox" role="switch" aria-label="동서남북 격자 표시" />
+        <span class="sky-grid-switch" aria-hidden="true"></span>
+        <span class="sky-grid-label">동서남북</span>
+        <span id="skyGridState" class="sky-grid-state" aria-hidden="true">OFF</span>
+      </label>
 
       <section id="helpOverlay" class="help-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-describedby="helpText">
         <div class="help-backdrop" data-help-close></div>
@@ -130,16 +137,16 @@
             <dd id="ageFact">-</dd>
           </div>
           <div>
-            <dt>거리와 밝기</dt>
+            <dt>거리</dt>
             <dd id="distanceFact">-</dd>
+          </div>
+          <div>
+            <dt>밝기</dt>
+            <dd id="brightnessFact">-</dd>
           </div>
           <div>
             <dt>지금 방향</dt>
             <dd id="directionFact">-</dd>
-          </div>
-          <div>
-            <dt>별빛 색</dt>
-            <dd id="colorFact">-</dd>
           </div>
         </dl>
 
@@ -152,6 +159,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js"></script>
+    <script type="module" src="./src/app.js?v=20260710-facts-v3"></script>
   </body>
 </html>

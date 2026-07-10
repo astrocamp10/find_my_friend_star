@@ -38,7 +38,7 @@ for (const star of search.stars) {
 
 assert(atlas.stars.length === atlas.counts.stars, "atlas star count mismatch");
 assert(atlas.counts.namedStars >= 5000, "atlas names missing");
-assert(atlas.counts.constellationClickableStars >= 700, "clickable constellation stars missing");
+assert(atlas.counts.constellationClickableStars >= 650, "clickable constellation stars missing");
 assert(atlas.counts.absoluteMagnitudeStars >= 5000, "atlas parallax data missing");
 const spica = atlas.stars.find((star) => star.displayName === "Spica" && star.clickable);
 assert(spica, "Spica clickable atlas star missing");

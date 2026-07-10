@@ -50,7 +50,7 @@ async function testViewport(browser, name, viewport) {
   const candidateTexts = await page.locator(".candidate-card").evaluateAll((cards) => cards.map((card) => card.innerText));
   const distance = inlineDetails;
   const summary = await page.locator("#resultSummary").innerText();
-  const color = inlineDetails;
+  const pageText = await page.locator("body").innerText();
   if (candidateCount !== 3) errors.push(`Expected 3 friend candidates, saw ${candidateCount}`);
   if (activeCandidateCount !== 1) errors.push(`Expected 1 active friend candidate, saw ${activeCandidateCount}`);
   if (inlineDetailCount !== 1) errors.push(`Expected 1 inline candidate detail, saw ${inlineDetailCount}`);
@@ -65,15 +65,14 @@ async function testViewport(browser, name, viewport) {
     errors.push(`Distance and brightness not shown: ${distance}`);
   }
   if (summary.includes("Gaia DR3")) errors.push(`Catalog designation leaked into summary: ${summary}`);
-  if (!color.includes("별") || color.includes("B-V")) errors.push(`Color not shown as Korean prose: ${color}`);
-
+  if (pageText.includes("별빛 색") || pageText.includes("B-V")) errors.push("Removed color information is still visible");
 
   await page.locator("#resetView").click();
   await page.waitForFunction(() => !document.body.classList.contains("has-result"), null, { timeout: 5000 });
   const resetResultPanelDisplay = await page.locator(".result-panel").evaluate((element) => getComputedStyle(element).display);
   if (resetResultPanelDisplay !== "none") errors.push(`Expected result panel hidden after reset, saw display=${resetResultPanelDisplay}`);
   await page.close();
-  return { name, title, candidateCount, activeCandidateCount, inlineDetailCount, lowerFactGridDisplay, candidateTexts, distance, summary, color, errors };
+  return { name, title, candidateCount, activeCandidateCount, inlineDetailCount, lowerFactGridDisplay, candidateTexts, distance, summary, errors };
 }
 
 (async () => {
