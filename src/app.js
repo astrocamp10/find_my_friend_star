@@ -40,6 +40,7 @@ const helpClose = document.querySelector("#helpClose");
 const modeButtons = [...document.querySelectorAll(".mode-button")];
 
 const DEG_TO_RAD = Math.PI / 180;
+const TWO_PI = Math.PI * 2;
 const LIGHT_YEARS_PER_PARSEC = 3.261563777;
 const MAX_BIRTHDAY_AGE = 120;
 const FRIEND_ATLAS_MATCH_MAX_DEGREES = 0.06;
@@ -52,7 +53,6 @@ const LANDSCAPE_PROJECTION_MARGIN = 720;
 const PANORAMA_IMAGE_URL = new URL("../assets/incheon-observatory-panorama.png", import.meta.url).href;
 const PANORAMA_AZIMUTH_OFFSET = 0;
 const PANORAMA_HORIZON_SOURCE_RATIO = 0.48;
-const PANORAMA_DRAW_SPAN_DEGREES = 128;
 const OBSERVATORY_HILL_AZIMUTH = 185;
 const CONSTELLATION_LABELS = {
   And: "안드로메다",
@@ -594,6 +594,7 @@ let nearbyStarsPromise = null;
 let skyFrameCache = null;
 let horizonPanoramaImage = null;
 let horizonPanoramaReady = false;
+let horizonPanoramaRenderer = null;
 let dragState = null;
 let pinchState = null;
 let activePointers = new Map();
@@ -972,10 +973,12 @@ function loadLandscapePanorama() {
   image.decoding = "async";
   image.onload = () => {
     horizonPanoramaReady = true;
+    horizonPanoramaRenderer = createPanoramaRenderer(image);
     requestPaint();
   };
   image.onerror = () => {
     horizonPanoramaReady = false;
+    horizonPanoramaRenderer = null;
     requestPaint();
   };
   image.src = PANORAMA_IMAGE_URL;
@@ -1894,15 +1897,8 @@ function friendHighlightIsAnimating(perfNow) {
 function paintSky(skyNow, perfNow) {
   const { width, height } = viewport;
   ctx.clearRect(0, 0, width, height);
-
-  const skyGradient = ctx.createLinearGradient(0, 0, 0, height);
-  skyGradient.addColorStop(0, "#05070d");
-  skyGradient.addColorStop(0.58, "#101a24");
-  skyGradient.addColorStop(1, "#1d201c");
-  ctx.fillStyle = skyGradient;
-  ctx.fillRect(0, 0, width, height);
-
   const camera = getCamera();
+  drawSkyBackdrop(camera);
   const skyFrame = getSkyFrame(skyNow);
   atlasHitTargets = [];
   drawAtmosphere(camera);
@@ -2054,16 +2050,33 @@ function getCamera() {
   if (!Number.isFinite(right.x)) right = { x: 1, y: 0, z: 0 };
   const up = normalizeVector(cross(forward, right));
   const fov = clamp(76 / Math.sqrt(view.zoom), 22, 82) * DEG_TO_RAD;
-  const focal = Math.min(viewport.width, viewport.height) / (2 * Math.tan(fov / 2));
+  const projectionScale = viewport.height / (4 * Math.tan(fov / 4));
 
   return {
     forward,
     right,
     up,
-    focal,
+    fov,
+    projectionScale,
+    focal: projectionScale,
     centerX: viewport.width / 2,
     centerY: viewport.height / 2,
   };
+}
+
+function drawSkyBackdrop(camera) {
+  const { width, height } = viewport;
+  ctx.fillStyle = "#02050a";
+  ctx.fillRect(0, 0, width, height);
+
+  const horizon = projectHorizontal({ azimuth: view.azimuth, altitude: 0 }, camera, height * 3);
+  const horizonY = Number.isFinite(horizon.y) ? horizon.y : height * 1.5;
+  const glow = ctx.createLinearGradient(0, horizonY - height * 0.78, 0, horizonY + height * 0.08);
+  glow.addColorStop(0, "rgba(4, 10, 18, 0)");
+  glow.addColorStop(0.62, "rgba(15, 29, 43, 0.34)");
+  glow.addColorStop(1, "rgba(61, 66, 50, 0.34)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
 }
 
 function drawAtmosphere(camera) {
@@ -2076,8 +2089,8 @@ function drawAtmosphere(camera) {
     viewport.height / 2,
     Math.max(viewport.width, viewport.height) * 0.8,
   );
-  glow.addColorStop(0, "rgba(49, 72, 94, 0.22)");
-  glow.addColorStop(0.55, "rgba(35, 60, 64, 0.08)");
+  glow.addColorStop(0, "rgba(34, 54, 79, 0.14)");
+  glow.addColorStop(0.55, "rgba(26, 45, 61, 0.05)");
   glow.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, viewport.width, viewport.height);
@@ -2097,8 +2110,8 @@ function drawConstellationLines(constellations, camera) {
 
     for (const line of constellation.lines) {
       const points = line.points ?? line;
-      const lineAlpha = clamp(alpha + touchBoost + constellationLineWeightAlpha(line.weight), 0, 0.56);
-      ctx.strokeStyle = `rgba(151, 226, 204, ${lineAlpha})`;
+      const lineAlpha = clamp(alpha + touchBoost + constellationLineWeightAlpha(line.weight), 0, 0.64);
+      ctx.strokeStyle = `rgba(126, 181, 205, ${lineAlpha})`;
       ctx.lineWidth = constellationLineWidth(constellation.rank, line.weight);
 
       drawProjectedPolyline(points, camera, (point, index) => {
@@ -2113,7 +2126,7 @@ function drawConstellationLines(constellations, camera) {
       }
     }
     if (labelPoint && shouldDrawConstellationLabel(constellation) && CONSTELLATION_LABELS[constellation.id]) {
-      ctx.fillStyle = isCoarsePointer() ? "rgba(215, 235, 222, 0.72)" : "rgba(199, 224, 209, 0.62)";
+      ctx.fillStyle = isCoarsePointer() ? "rgba(205, 225, 232, 0.72)" : "rgba(186, 211, 222, 0.62)";
       ctx.font = `600 ${isCoarsePointer() ? 12 : 11}px system-ui, sans-serif`;
       ctx.fillText(CONSTELLATION_LABELS[constellation.id], labelPoint.x + 8, labelPoint.y - 8);
     }
@@ -2135,9 +2148,9 @@ function shouldDrawConstellationLabel(constellation) {
 }
 
 function constellationLineAlpha(rank) {
-  if (rank <= 1) return view.zoom < 1.45 ? 0.34 : 0.4;
-  if (rank === 2) return 0.22;
-  return 0.14;
+  if (rank <= 1) return view.zoom < 1.45 ? 0.42 : 0.48;
+  if (rank === 2) return 0.28;
+  return 0.18;
 }
 
 function constellationLineWeightAlpha(weight) {
@@ -2150,7 +2163,7 @@ function constellationLineWidth(rank, weight = "normal") {
   const touch = isCoarsePointer();
   const base = rank <= 1 ? (touch ? 1.35 : 1.08) : rank === 2 ? (touch ? 1.08 : 0.86) : (touch ? 0.9 : 0.72);
   const scale = weight === "thin" ? 0.74 : weight === "bold" ? 1.24 : 1;
-  return base * scale;
+  return base * scale * 1.22;
 }
 
 function drawProjectedPolyline(line, camera, drawPoint) {
@@ -2198,12 +2211,16 @@ function drawAtlasStars(stars, camera) {
     const point = projectHorizontal(horizontal, camera, 80);
     if (!point.visible) continue;
 
-    const brightness = clamp(6.5 - star.mag, 0.25, 8);
-    const radius = clamp(0.28 + brightness * brightness * 0.14, 0.32, 5.8) * Math.sqrt(view.zoom);
+    const brightness = Math.pow(2.512, clamp(5.1 - star.mag, -1.5, 6.8));
+    const radius =
+      clamp(0.32 + Math.sqrt(brightness) * 0.24, 0.44, 5.2) *
+      clamp(Math.sqrt(view.zoom), 1, 1.85);
     const color = starColor(star.bv);
 
-    ctx.globalAlpha = clamp(horizontal.altitude / 28, 0.18, star.mag < 2 ? 1 : 0.9);
-    ctx.shadowBlur = star.mag < 1.5 ? 10 + (1.5 - star.mag) * 4 : 0;
+    const altitudeAlpha = clamp((horizontal.altitude + 2) / 18, 0.14, 1);
+    const thresholdAlpha = clamp((magnitudeLimit - star.mag + 0.25) / 0.85, 0.24, 1);
+    ctx.globalAlpha = altitudeAlpha * thresholdAlpha;
+    ctx.shadowBlur = star.mag < 1.5 ? 6 + (1.5 - star.mag) * 2.4 : 0;
     ctx.shadowColor = color;
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -2234,9 +2251,9 @@ function drawAtlasStars(stars, camera) {
 }
 
 function visibleMagnitudeLimit() {
-  if (view.zoom < 1.4) return 4.95;
-  if (view.zoom < 2.2) return 5.55;
-  return 6.25;
+  if (view.zoom < 1.4) return 5.35;
+  if (view.zoom < 2.2) return 5.9;
+  return 6.45;
 }
 
 function drawFriendStars(skyNow, perfNow, camera) {
@@ -2310,66 +2327,179 @@ function drawPanoramaGround(camera) {
   const sourceHeight = image?.naturalHeight || image?.height || 0;
   if (!horizonPanoramaReady || !sourceWidth || !sourceHeight) return false;
 
+  if (horizonPanoramaRenderer) {
+    const pixelRatio = clamp(canvas.width / Math.max(1, viewport.width), 1, 2);
+    const projectedCanvas = horizonPanoramaRenderer.render(camera, viewport.width, viewport.height, pixelRatio);
+    if (projectedCanvas) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(projectedCanvas, 0, 0, viewport.width, viewport.height);
+      ctx.restore();
+      return true;
+    }
+  }
+
   const sourceHorizonY = sourceHeight * PANORAMA_HORIZON_SOURCE_RATIO;
-  const step = isCoarsePointer() ? 1.6 : 0.95;
   const centerHorizon = projectHorizontal({ azimuth: view.azimuth, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
   if (centerHorizon.depth <= 0.04) return true;
 
-  const sourceBelowHorizon = Math.max(1, sourceHeight - sourceHorizonY);
-  const angularScale = camera.focal / (sourceWidth / (Math.PI * 2));
-  const lowestHorizonY = viewport.height / 2 + Math.tan(MIN_VIEW_ALTITUDE * DEG_TO_RAD) * camera.focal;
-  const coverScale = (viewport.height + 24 - lowestHorizonY) / sourceBelowHorizon;
-  const scale = clamp(Math.max(angularScale, coverScale), 0.72, 1.75);
-  const targetY = centerHorizon.y - sourceHorizonY * scale;
+  const scale = (TWO_PI * camera.projectionScale) / sourceWidth;
+  const targetW = sourceWidth * scale;
   const targetH = sourceHeight * scale;
+  const targetY = centerHorizon.y - sourceHorizonY * scale;
+  if (targetY > viewport.height + 120 || targetY + targetH < -80) return true;
+
+  const sourceCenterX = (normalizeDegrees(view.azimuth - PANORAMA_AZIMUTH_OFFSET) / 360) * targetW;
+  let drawX = viewport.width / 2 - sourceCenterX;
+  drawX = ((drawX % targetW) + targetW) % targetW - targetW;
 
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
-  for (let offset = -PANORAMA_DRAW_SPAN_DEGREES; offset < PANORAMA_DRAW_SPAN_DEGREES; offset += step) {
-    const azimuth0 = normalizeDegrees(view.azimuth + offset);
-    const azimuth1 = normalizeDegrees(view.azimuth + offset + step);
-    const horizon0 = projectHorizontal({ azimuth: azimuth0, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
-    const horizon1 = projectHorizontal({ azimuth: azimuth1, altitude: 0 }, camera, LANDSCAPE_PROJECTION_MARGIN);
-    if (horizon0.depth <= 0.04 || horizon1.depth <= 0.04) continue;
-
-    const targetX = Math.min(horizon0.x, horizon1.x) - 1;
-    const targetW = Math.abs(horizon1.x - horizon0.x) + 2;
-    if (targetX > viewport.width + 80 || targetX + targetW < -80 || targetY > viewport.height + 120 || targetY + targetH < -80) continue;
-
-    const sourceX = (normalizeDegrees(azimuth0 - PANORAMA_AZIMUTH_OFFSET) / 360) * sourceWidth;
-    const sourceW = Math.max(1, (step / 360) * sourceWidth + 1);
-    drawWrappedPanoramaSlice(image, sourceX, sourceW, targetX, targetY, targetW, targetH);
+  for (let x = drawX; x < viewport.width; x += targetW) {
+    if (x + targetW < -1) continue;
+    ctx.drawImage(image, x, targetY, targetW, targetH);
   }
 
   ctx.restore();
   return true;
 }
 
-function drawWrappedPanoramaSlice(image, sourceX, sourceW, targetX, targetY, targetW, targetH) {
-  const sourceWidth = image.naturalWidth || image.width;
-  const sourceHeight = image.naturalHeight || image.height;
-  const normalizedX = ((sourceX % sourceWidth) + sourceWidth) % sourceWidth;
-  const firstW = Math.min(sourceW, sourceWidth - normalizedX);
-  const firstTargetW = targetW * (firstW / sourceW);
-  ctx.drawImage(image, normalizedX, 0, firstW, sourceHeight, targetX, targetY, firstTargetW, targetH);
+function createPanoramaRenderer(image) {
+  const projectionCanvas = document.createElement("canvas");
+  const gl = projectionCanvas.getContext("webgl", {
+    alpha: true,
+    antialias: false,
+    premultipliedAlpha: true,
+    preserveDrawingBuffer: true,
+  });
+  if (!gl) return null;
 
-  const remainingW = sourceW - firstW;
-  if (remainingW > 0) {
-    ctx.drawImage(
-      image,
-      0,
-      0,
-      remainingW,
-      sourceHeight,
-      targetX + firstTargetW,
-      targetY,
-      targetW - firstTargetW,
-      targetH,
-    );
+  const vertexSource = `
+    attribute vec2 a_position;
+    void main() {
+      gl_Position = vec4(a_position, 0.0, 1.0);
+    }
+  `;
+  const fragmentSource = `
+    precision highp float;
+    uniform sampler2D u_panorama;
+    uniform vec2 u_resolution;
+    uniform float u_projectionScale;
+    uniform vec3 u_forward;
+    uniform vec3 u_right;
+    uniform vec3 u_up;
+    uniform float u_horizonRatio;
+    uniform float u_verticalRadians;
+    uniform float u_azimuthOffset;
+
+    const float TWO_PI = 6.283185307179586;
+
+    void main() {
+      vec2 plane = (gl_FragCoord.xy - u_resolution * 0.5) / u_projectionScale;
+      float radiusSquared = dot(plane, plane);
+      float denominator = 4.0 + radiusSquared;
+      vec3 localDirection = vec3(
+        4.0 * plane.x / denominator,
+        4.0 * plane.y / denominator,
+        (4.0 - radiusSquared) / denominator
+      );
+      vec3 worldDirection = normalize(
+        u_right * localDirection.x +
+        u_up * localDirection.y +
+        u_forward * localDirection.z
+      );
+
+      float azimuth = atan(worldDirection.x, worldDirection.z) - u_azimuthOffset;
+      float altitude = asin(clamp(worldDirection.y, -1.0, 1.0));
+      float sourceX = fract(azimuth / TWO_PI + 1.0);
+      float sourceY = u_horizonRatio - altitude / u_verticalRadians;
+      if (sourceY < 0.0 || sourceY > 1.0) discard;
+
+      gl_FragColor = texture2D(u_panorama, vec2(sourceX, sourceY));
+    }
+  `;
+
+  function compileShader(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+    gl.deleteShader(shader);
+    return null;
   }
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+  if (!vertexShader || !fragmentShader) return null;
+
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+  const locations = {
+    position: gl.getAttribLocation(program, "a_position"),
+    resolution: gl.getUniformLocation(program, "u_resolution"),
+    projectionScale: gl.getUniformLocation(program, "u_projectionScale"),
+    forward: gl.getUniformLocation(program, "u_forward"),
+    right: gl.getUniformLocation(program, "u_right"),
+    up: gl.getUniformLocation(program, "u_up"),
+    horizonRatio: gl.getUniformLocation(program, "u_horizonRatio"),
+    verticalRadians: gl.getUniformLocation(program, "u_verticalRadians"),
+    azimuthOffset: gl.getUniformLocation(program, "u_azimuthOffset"),
+    panorama: gl.getUniformLocation(program, "u_panorama"),
+  };
+
+  gl.useProgram(program);
+  gl.enableVertexAttribArray(locations.position);
+  gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform1i(locations.panorama, 0);
+  gl.uniform1f(locations.horizonRatio, PANORAMA_HORIZON_SOURCE_RATIO);
+  gl.uniform1f(locations.verticalRadians, TWO_PI * (image.naturalHeight / image.naturalWidth));
+  gl.uniform1f(locations.azimuthOffset, PANORAMA_AZIMUTH_OFFSET * DEG_TO_RAD);
+
+  return {
+    render(camera, width, height, pixelRatio) {
+      if (gl.isContextLost()) return null;
+      const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
+      const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
+      if (projectionCanvas.width !== pixelWidth || projectionCanvas.height !== pixelHeight) {
+        projectionCanvas.width = pixelWidth;
+        projectionCanvas.height = pixelHeight;
+      }
+
+      gl.viewport(0, 0, pixelWidth, pixelHeight);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(program);
+      gl.uniform2f(locations.resolution, pixelWidth, pixelHeight);
+      gl.uniform1f(locations.projectionScale, camera.projectionScale * pixelRatio);
+      gl.uniform3f(locations.forward, camera.forward.x, camera.forward.y, camera.forward.z);
+      gl.uniform3f(locations.right, camera.right.x, camera.right.y, camera.right.z);
+      gl.uniform3f(locations.up, camera.up.x, camera.up.y, camera.up.z);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return projectionCanvas;
+    },
+  };
 }
+
 function drawTerrainBand(camera, altitudeForAzimuth, paint) {
   const segments = projectTerrainSegments(camera, altitudeForAzimuth);
   if (!segments.length) return;
@@ -2587,10 +2717,12 @@ function drawFriendStar(star, horizontal, active, perfNow, camera) {
 function projectHorizontal(horizontal, camera, margin = 80) {
   const vector = vectorFromHorizontal(horizontal.azimuth, horizontal.altitude);
   const depth = dot(vector, camera.forward);
-  if (depth <= 0.04) return { visible: false, x: 0, y: 0, depth };
+  const denominator = 1 + depth;
+  if (denominator <= 0.08) return { visible: false, x: 0, y: 0, depth };
 
-  const x = camera.centerX + (dot(vector, camera.right) / depth) * camera.focal;
-  const y = camera.centerY - (dot(vector, camera.up) / depth) * camera.focal;
+  const scale = (2 * camera.projectionScale) / denominator;
+  const x = camera.centerX + dot(vector, camera.right) * scale;
+  const y = camera.centerY - dot(vector, camera.up) * scale;
   return {
     x,
     y,
@@ -2622,12 +2754,12 @@ function starColorDescription(colorIndex) {
 
 function starColor(colorIndex) {
   const value = Number(colorIndex);
-  if (!Number.isFinite(value)) return "#fff7df";
-  if (value < 0.1) return "#d8f0ff";
-  if (value < 0.8) return "#fff7df";
-  if (value < 1.5) return "#ffd88f";
-  if (value < 2.8) return "#ffad6c";
-  return "#ff7b66";
+  if (!Number.isFinite(value)) return "#f7f4e9";
+  if (value < 0.1) return "#dceeff";
+  if (value < 0.8) return "#f7f4e9";
+  if (value < 1.5) return "#ffe3b5";
+  if (value < 2.8) return "#ffc491";
+  return "#ffad9c";
 }
 
 function scheduleResizeCanvas() {
