@@ -33,6 +33,8 @@ const factLabels = [...document.querySelectorAll(".fact-grid dt")];
 const scienceNote = document.querySelector("#scienceNote");
 const resetView = document.querySelector("#resetView");
 const helpButton = document.querySelector("#helpButton");
+const skyBackgroundToggle = document.querySelector("#skyBackgroundToggle");
+const skyBackgroundState = document.querySelector("#skyBackgroundState");
 const skyGridToggle = document.querySelector("#skyGridToggle");
 const skyGridState = document.querySelector("#skyGridState");
 const helpOverlay = document.querySelector("#helpOverlay");
@@ -50,6 +52,9 @@ const MAX_VIEW_ALTITUDE = 88;
 const HORIZON_SAMPLES = Array.from({ length: 181 }, (_, index) => index * 2);
 const LANDSCAPE_SAMPLES = Array.from({ length: 121 }, (_, index) => -120 + index * 2);
 const LANDSCAPE_PROJECTION_MARGIN = 720;
+const LANDSCAPE_ALPHA_MASK_WIDTH = 1024;
+const LANDSCAPE_ALPHA_THRESHOLD = 36;
+const OCCLUDED_LANDSCAPE_OPACITY = 0.22;
 const PANORAMA_IMAGE_URL = new URL("../assets/incheon-observatory-panorama.png", import.meta.url).href;
 const PANORAMA_AZIMUTH_OFFSET = 0;
 const PANORAMA_HORIZON_SOURCE_RATIO = 0.48;
@@ -585,6 +590,8 @@ let activeTargetAge = null;
 let animationStart = 0;
 let view = { azimuth: 180, altitude: 35, zoom: 1 };
 let targetView = { azimuth: 180, altitude: 35, zoom: 1 };
+let showLandscape = true;
+let landscapeAutoDimmed = false;
 let showHorizonGrid = false;
 let reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -596,6 +603,7 @@ let skyFrameCache = null;
 let horizonPanoramaImage = null;
 let horizonPanoramaReady = false;
 let horizonPanoramaRenderer = null;
+let horizonPanoramaAlphaMask = null;
 let dragState = null;
 let pinchState = null;
 let activePointers = new Map();
@@ -632,10 +640,16 @@ attachSkyControls();
 populateBirthdayInputs();
 syncClockAndSky();
 helpButton?.addEventListener("click", () => openHelpOverlay());
+skyBackgroundToggle?.addEventListener("change", () => {
+  showLandscape = skyBackgroundToggle.checked;
+  if (!showLandscape) landscapeAutoDimmed = false;
+  updateLandscapeControl();
+  requestPaint();
+});
 skyGridToggle?.addEventListener("change", () => {
   showHorizonGrid = skyGridToggle.checked;
   if (skyGridState) skyGridState.textContent = showHorizonGrid ? "ON" : "OFF";
-  skyGridToggle.closest(".sky-grid-toggle")?.classList.toggle("active", showHorizonGrid);
+  skyGridToggle.closest(".sky-toggle")?.classList.toggle("active", showHorizonGrid);
   requestPaint();
 });
 helpOverlay?.addEventListener("click", (event) => {
@@ -660,6 +674,22 @@ function closeHelpOverlay() {
   helpOverlay.classList.add("hidden");
   helpButton?.setAttribute("aria-expanded", "false");
   helpLastFocus?.focus?.({ preventScroll: true });
+}
+
+function updateLandscapeControl() {
+  const control = skyBackgroundToggle?.closest(".sky-background-toggle");
+  control?.classList.toggle("active", showLandscape);
+  control?.classList.toggle("auto-dimmed", showLandscape && landscapeAutoDimmed);
+  if (skyBackgroundState) {
+    skyBackgroundState.textContent = !showLandscape ? "OFF" : landscapeAutoDimmed ? "옅게" : "ON";
+  }
+}
+
+function setLandscapeAutoDimmed(dimmed) {
+  const nextValue = Boolean(showLandscape && dimmed);
+  if (nextValue === landscapeAutoDimmed) return;
+  landscapeAutoDimmed = nextValue;
+  updateLandscapeControl();
 }
 
 modeButtons.forEach((button) => {
@@ -981,15 +1011,44 @@ function loadLandscapePanorama() {
   image.onload = () => {
     horizonPanoramaReady = true;
     horizonPanoramaRenderer = createPanoramaRenderer(image);
+    horizonPanoramaAlphaMask = createPanoramaAlphaMask(image);
     requestPaint();
   };
   image.onerror = () => {
     horizonPanoramaReady = false;
     horizonPanoramaRenderer = null;
+    horizonPanoramaAlphaMask = null;
     requestPaint();
   };
   image.src = PANORAMA_IMAGE_URL;
 }
+
+function createPanoramaAlphaMask(image) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) return null;
+
+  const width = Math.min(LANDSCAPE_ALPHA_MASK_WIDTH, sourceWidth);
+  const height = Math.max(1, Math.round((sourceHeight / sourceWidth) * width));
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskContext) return null;
+
+  try {
+    maskContext.drawImage(image, 0, 0, width, height);
+    const pixels = maskContext.getImageData(0, 0, width, height).data;
+    const alpha = new Uint8Array(width * height);
+    for (let index = 0; index < alpha.length; index += 1) {
+      alpha[index] = pixels[index * 4 + 3];
+    }
+    return { width, height, alpha, sourceWidth, sourceHeight };
+  } catch {
+    return null;
+  }
+}
+
 async function loadSkyAtlas() {
   try {
     const response = await fetch(new URL("../data/sky-atlas.json?v=stellarium-western-1", import.meta.url));
@@ -1890,8 +1949,47 @@ function paintSky(skyNow, perfNow) {
   drawConstellationLines(skyFrame.constellations, camera);
   drawAtlasStars(skyFrame.stars, camera);
   drawFriendStars(skyNow, perfNow, camera);
-  drawGroundScene(camera, perfNow);
+  const autoDimLandscape = selectedStarIsBehindLandscape(skyNow);
+  setLandscapeAutoDimmed(autoDimLandscape);
+  if (showLandscape) {
+    drawGroundScene(camera, perfNow, autoDimLandscape ? OCCLUDED_LANDSCAPE_OPACITY : 1);
+  }
   if (showHorizonGrid) drawHorizon(camera);
+}
+
+function selectedStarIsBehindLandscape(skyNow) {
+  if (!showLandscape || !selected?.star) return false;
+
+  const horizontal = equatorialToHorizontal(selected.star, OBSERVATORY, skyNow);
+  const altitude = Number(horizontal.altitude);
+  const azimuth = Number(horizontal.azimuth);
+  if (!Number.isFinite(altitude) || !Number.isFinite(azimuth) || altitude < 0) return false;
+
+  if (horizonPanoramaAlphaMask) return panoramaOccludesHorizontal(azimuth, altitude);
+  return altitude <= nearRidgeAltitude(azimuth) + 0.8;
+}
+
+function panoramaOccludesHorizontal(azimuth, altitude) {
+  const mask = horizonPanoramaAlphaMask;
+  if (!mask) return false;
+
+  const verticalRadians = TWO_PI * (mask.sourceHeight / mask.sourceWidth);
+  const sourceX = normalizeDegrees(azimuth - PANORAMA_AZIMUTH_OFFSET) / 360;
+  const sourceY = PANORAMA_HORIZON_SOURCE_RATIO - (altitude * DEG_TO_RAD) / verticalRadians;
+  if (sourceY < 0 || sourceY > 1) return false;
+
+  const centerX = Math.floor(sourceX * mask.width) % mask.width;
+  const centerY = clamp(Math.floor(sourceY * mask.height), 0, mask.height - 1);
+  const sampleRadius = 2;
+
+  for (let y = centerY - sampleRadius; y <= centerY + sampleRadius; y += 1) {
+    if (y < 0 || y >= mask.height) continue;
+    for (let x = centerX - sampleRadius; x <= centerX + sampleRadius; x += 1) {
+      const wrappedX = (x + mask.width) % mask.width;
+      if (mask.alpha[y * mask.width + wrappedX] >= LANDSCAPE_ALPHA_THRESHOLD) return true;
+    }
+  }
+  return false;
 }
 
 function getSkyFrame(skyNow) {
@@ -2091,11 +2189,11 @@ function drawConstellationLines(constellations, camera) {
 
     let labelPoint = null;
     const alpha = constellationLineAlpha(constellation.rank);
-    const touchBoost = isCoarsePointer() ? 0.08 : 0;
+    const touchBoost = isCoarsePointer() ? 0.1 : 0;
 
     for (const line of constellation.lines) {
       const points = line.points ?? line;
-      const lineAlpha = clamp(alpha + touchBoost + constellationLineWeightAlpha(line.weight), 0, 0.64);
+      const lineAlpha = clamp(alpha + touchBoost + constellationLineWeightAlpha(line.weight), 0, 0.72);
       ctx.strokeStyle = `rgba(126, 181, 205, ${lineAlpha})`;
       ctx.lineWidth = constellationLineWidth(constellation.rank, line.weight);
 
@@ -2133,14 +2231,14 @@ function shouldDrawConstellationLabel(constellation) {
 }
 
 function constellationLineAlpha(rank) {
-  if (rank <= 1) return view.zoom < 1.45 ? 0.42 : 0.48;
-  if (rank === 2) return 0.28;
-  return 0.18;
+  if (rank <= 1) return view.zoom < 1.45 ? 0.48 : 0.54;
+  if (rank === 2) return 0.33;
+  return 0.22;
 }
 
 function constellationLineWeightAlpha(weight) {
-  if (weight === "thin") return -0.06;
-  if (weight === "bold") return 0.04;
+  if (weight === "thin") return -0.05;
+  if (weight === "bold") return 0.05;
   return 0;
 }
 
@@ -2148,7 +2246,7 @@ function constellationLineWidth(rank, weight = "normal") {
   const touch = isCoarsePointer();
   const base = rank <= 1 ? (touch ? 1.35 : 1.08) : rank === 2 ? (touch ? 1.08 : 0.86) : (touch ? 0.9 : 0.72);
   const scale = weight === "thin" ? 0.74 : weight === "bold" ? 1.24 : 1;
-  return base * scale * 1.22;
+  return base * scale * 1.36;
 }
 
 function drawProjectedPolyline(line, camera, drawPoint) {
@@ -2198,7 +2296,7 @@ function drawAtlasStars(stars, camera) {
 
     const brightness = Math.pow(2.512, clamp(5.1 - star.mag, -1.5, 6.8));
     const radius =
-      clamp(0.32 + Math.sqrt(brightness) * 0.24, 0.44, 5.2) *
+      clamp(0.38 + Math.sqrt(brightness) * 0.27, 0.54, 5.8) *
       clamp(Math.sqrt(view.zoom), 1, 1.85);
     const color = starColor(star.bv);
 
@@ -2282,11 +2380,11 @@ function drawHorizon(camera) {
   ctx.restore();
 }
 
-function drawGroundScene(camera, perfNow) {
-  if (drawPanoramaGround(camera)) return;
+function drawGroundScene(camera, perfNow, opacity = 1) {
+  if (drawPanoramaGround(camera, opacity)) return;
 
   drawTerrainBand(camera, distantRidgeAltitude, {
-    alpha: 0.72,
+    alpha: 0.72 * opacity,
     edge: "rgba(170, 197, 177, 0.16)",
     stops: [
       [0, "rgba(40, 58, 58, 0.46)"],
@@ -2295,7 +2393,7 @@ function drawGroundScene(camera, perfNow) {
     ],
   });
   drawTerrainBand(camera, nearRidgeAltitude, {
-    alpha: 0.92,
+    alpha: 0.92 * opacity,
     edge: "rgba(214, 205, 172, 0.18)",
     stops: [
       [0, "rgba(37, 51, 38, 0.78)"],
@@ -2303,10 +2401,10 @@ function drawGroundScene(camera, perfNow) {
       [1, "rgba(7, 10, 7, 0.98)"],
     ],
   });
-  drawObservatorySilhouette(camera, perfNow);
+  drawObservatorySilhouette(camera, perfNow, opacity);
 }
 
-function drawPanoramaGround(camera) {
+function drawPanoramaGround(camera, opacity = 1) {
   const image = horizonPanoramaImage;
   const sourceWidth = image?.naturalWidth || image?.width || 0;
   const sourceHeight = image?.naturalHeight || image?.height || 0;
@@ -2317,6 +2415,7 @@ function drawPanoramaGround(camera) {
     const projectedCanvas = horizonPanoramaRenderer.render(camera, viewport.width, viewport.height, pixelRatio);
     if (projectedCanvas) {
       ctx.save();
+      ctx.globalAlpha = opacity;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(projectedCanvas, 0, 0, viewport.width, viewport.height);
@@ -2340,6 +2439,7 @@ function drawPanoramaGround(camera) {
   drawX = ((drawX % targetW) + targetW) % targetW - targetW;
 
   ctx.save();
+  ctx.globalAlpha = opacity;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.filter = "brightness(62%) saturate(74%) contrast(108%) sepia(10%) hue-rotate(165deg)";
@@ -2585,7 +2685,7 @@ function angularHill(azimuth, center, widthDegrees, heightDegrees) {
   return Math.exp(-(distance * distance) / (2 * widthDegrees * widthDegrees)) * heightDegrees;
 }
 
-function drawObservatorySilhouette(camera, perfNow) {
+function drawObservatorySilhouette(camera, perfNow, opacity = 1) {
   const hillAltitude = nearRidgeAltitude(OBSERVATORY_HILL_AZIMUTH) + 0.08;
   const anchor = projectHorizontal({ azimuth: OBSERVATORY_HILL_AZIMUTH, altitude: hillAltitude }, camera, 240);
   if (!anchor.visible) return;
@@ -2599,7 +2699,7 @@ function drawObservatorySilhouette(camera, perfNow) {
 
   ctx.save();
   ctx.translate(anchor.x, anchor.y + height * 0.08);
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = alpha * opacity;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
@@ -2682,7 +2782,7 @@ function drawFriendStar(star, horizontal, active, perfNow, camera) {
   const point = projectHorizontal(horizontal, camera, 100);
   if (!point.visible) return;
 
-  const baseSize = clamp(8.5 - star.gMag * 0.72, 1.2, 5.2);
+  const baseSize = clamp(8.8 - star.gMag * 0.72, 1.35, 5.6);
   const pulse = active ? (perfNow ? 1.2 + Math.sin(perfNow / 180) * 0.28 : 1.08) : 1;
   const radius = baseSize * Math.sqrt(view.zoom) * pulse;
   const color = starColor(star.bpRp);

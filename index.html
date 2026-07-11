@@ -9,7 +9,7 @@
     />
     <title>나의 별빛 친구 찾기</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./src/styles.css?v=20260710-facts-v3" />
+    <link rel="stylesheet" href="./src/styles.css?v=20260711-landscape-v1" />
   </head>
   <body>
     <main class="app-shell">
@@ -26,12 +26,21 @@
         ?
       </button>
 
-      <label class="sky-grid-toggle" title="동서남북 격자 표시">
-        <input id="skyGridToggle" type="checkbox" role="switch" aria-label="동서남북 격자 표시" />
-        <span class="sky-grid-switch" aria-hidden="true"></span>
-        <span class="sky-grid-label">동서남북</span>
-        <span id="skyGridState" class="sky-grid-state" aria-hidden="true">OFF</span>
-      </label>
+      <div class="sky-tools" role="group" aria-label="하늘 표시 설정">
+        <label class="sky-toggle sky-background-toggle active" title="관측소 배경 표시">
+          <input id="skyBackgroundToggle" type="checkbox" role="switch" aria-label="관측소 배경 표시" checked />
+          <span class="sky-toggle-switch" aria-hidden="true"></span>
+          <span class="sky-toggle-label">배경</span>
+          <span id="skyBackgroundState" class="sky-toggle-state" aria-hidden="true">ON</span>
+        </label>
+
+        <label class="sky-toggle sky-grid-toggle" title="동서남북 격자 표시">
+          <input id="skyGridToggle" type="checkbox" role="switch" aria-label="동서남북 격자 표시" />
+          <span class="sky-toggle-switch" aria-hidden="true"></span>
+          <span class="sky-toggle-label">동서남북</span>
+          <span id="skyGridState" class="sky-toggle-state" aria-hidden="true">OFF</span>
+        </label>
+      </div>
 
       <section id="helpOverlay" class="help-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-describedby="helpText">
         <div class="help-backdrop" data-help-close></div>
@@ -159,6 +168,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=20260710-facts-v3"></script>
+    <script type="module" src="./src/app.js?v=20260711-visibility-v2"></script>
   </body>
 </html>

@@ -476,14 +476,21 @@ dd {
   font-size: 0.84rem;
 }
 
-.sky-grid-toggle {
+.sky-tools {
   position: fixed;
   top: calc(14px + env(safe-area-inset-top));
   right: calc(14px + env(safe-area-inset-right));
   z-index: 5;
-  display: inline-flex;
+  display: grid;
+  gap: 6px;
+}
+
+.sky-toggle {
+  display: grid;
+  grid-template-columns: 32px minmax(52px, 1fr) 28px;
   align-items: center;
   gap: 8px;
+  min-width: 150px;
   min-height: 44px;
   padding: 0 11px;
   border: 1px solid rgba(255, 247, 232, 0.22);
@@ -498,23 +505,32 @@ dd {
   user-select: none;
 }
 
-.sky-grid-toggle.active {
+.sky-toggle.active {
   border-color: rgba(141, 216, 193, 0.52);
   background: rgba(10, 28, 31, 0.82);
 }
 
-.sky-grid-state {
-  min-width: 24px;
+.sky-background-toggle.auto-dimmed {
+  border-color: rgba(245, 201, 106, 0.58);
+  background: rgba(34, 29, 18, 0.84);
+}
+
+.sky-toggle-state {
+  min-width: 28px;
   color: var(--accent-strong);
   font-size: 0.72rem;
   text-align: right;
 }
 
-.sky-grid-toggle.active .sky-grid-state {
+.sky-toggle.active .sky-toggle-state {
   color: var(--mint);
 }
 
-.sky-grid-toggle input {
+.sky-background-toggle.auto-dimmed .sky-toggle-state {
+  color: var(--accent-strong);
+}
+
+.sky-toggle input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -522,7 +538,7 @@ dd {
   pointer-events: none;
 }
 
-.sky-grid-switch {
+.sky-toggle-switch {
   position: relative;
   flex: 0 0 auto;
   width: 32px;
@@ -533,7 +549,7 @@ dd {
   transition: background 160ms ease, border-color 160ms ease;
 }
 
-.sky-grid-switch::after {
+.sky-toggle-switch::after {
   content: "";
   position: absolute;
   top: 2px;
@@ -545,17 +561,17 @@ dd {
   transition: transform 160ms ease, background 160ms ease;
 }
 
-.sky-grid-toggle input:checked + .sky-grid-switch {
+.sky-toggle input:checked + .sky-toggle-switch {
   border-color: rgba(141, 216, 193, 0.72);
   background: rgba(141, 216, 193, 0.22);
 }
 
-.sky-grid-toggle input:checked + .sky-grid-switch::after {
+.sky-toggle input:checked + .sky-toggle-switch::after {
   background: var(--mint);
   transform: translateX(14px);
 }
 
-.sky-grid-toggle input:focus-visible + .sky-grid-switch {
+.sky-toggle input:focus-visible + .sky-toggle-switch {
   outline: 2px solid var(--accent-strong);
   outline-offset: 3px;
 }
@@ -1230,7 +1246,7 @@ dd {
 @media (forced-colors: active) {
   .control-panel,
   .result-panel,
-  .sky-grid-toggle,
+  .sky-toggle,
   .mode-switch,
   .field input,
   .field select,
