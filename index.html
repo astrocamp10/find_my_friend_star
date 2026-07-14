@@ -9,9 +9,38 @@
     />
     <title>나의 별빛 친구 찾기</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./src/styles.css?v=20260711-landscape-v1" />
+    <link rel="stylesheet" href="./src/styles.css?v=20260714-loading-v1" />
   </head>
-  <body>
+  <body class="is-loading">
+    <section id="loadingScreen" class="loading-screen" aria-labelledby="loadingTitle">
+      <article class="loading-card">
+        <p class="loading-kicker">나의 별빛 친구 찾기</p>
+        <h2 id="loadingTitle">별빛 친구가 뭐예요?</h2>
+        <p class="loading-subtitle">내 나이만큼 우주를 여행한 빛이에요.</p>
+
+        <div class="lightyear-animation loading-lightyear" aria-hidden="true">
+          <div class="space-star"><span>별</span></div>
+          <div class="space-track">
+            <i class="light-pulse one"></i>
+            <i class="light-pulse two"></i>
+            <i class="light-pulse three"></i>
+          </div>
+          <div class="space-earth"><span>지구</span></div>
+          <div class="age-bubble">12년 전 출발</div>
+          <div class="distance-bubble">12광년 떨어진 별</div>
+          <div class="now-bubble">오늘 도착</div>
+        </div>
+
+        <p class="loading-copy">
+          내가 <strong>12살</strong>이라면, <strong>12광년 떨어진 별빛</strong>은 내가 태어날 무렵 출발해
+          오늘 지구에 도착한 빛이에요. 그래서 나와 같은 시간을 여행한 <strong>별빛 친구</strong>라고 불러요.
+        </p>
+
+        <div class="loading-meter" aria-hidden="true"><span></span></div>
+        <p id="loadingStatus" class="loading-status" role="status" aria-live="polite">인천 하늘의 별과 별자리를 불러오고 있어요…</p>
+      </article>
+    </section>
+
     <main class="app-shell">
       <canvas id="skyCanvas" aria-hidden="true"></canvas>
       <button
@@ -168,6 +197,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=20260711-visibility-v2"></script>
+    <script type="module" src="./src/app.js?v=20260714-loading-v1"></script>
   </body>
 </html>

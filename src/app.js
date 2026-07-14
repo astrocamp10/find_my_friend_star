@@ -10,6 +10,8 @@ import {
 
 const canvas = document.querySelector("#skyCanvas");
 const ctx = canvas.getContext("2d");
+const loadingScreen = document.querySelector("#loadingScreen");
+const loadingStatus = document.querySelector("#loadingStatus");
 const form = document.querySelector("#friendForm");
 const controlPanel = document.querySelector(".control-panel");
 const resultPanel = document.querySelector(".result-panel");
@@ -594,6 +596,8 @@ let showLandscape = true;
 let landscapeAutoDimmed = false;
 let showHorizonGrid = false;
 let reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const loadingStartedAt = performance.now();
+const minimumLoadingScreenDuration = reducedMotion ? 1400 : 2800;
 let viewport = { width: window.innerWidth, height: window.innerHeight };
 let skyAtlas = { stars: [], constellations: [] };
 let nearbyStars = [];
@@ -617,6 +621,7 @@ let lastClockSecond = "";
 let timeStatusMessage = "";
 let lastSkySyncBucket = -1;
 let helpLastFocus = null;
+let loadingScreenFinished = false;
 
 resizeCanvas();
 window.addEventListener("resize", scheduleResizeCanvas, { passive: true });
@@ -633,8 +638,10 @@ document.addEventListener("visibilitychange", () => {
   requestPaint();
 });
 window.setInterval(syncClockAndSky, 1000);
-loadSkyAtlas();
-loadLandscapePanorama();
+const skyAtlasLoad = loadSkyAtlas();
+const landscapeLoad = loadLandscapePanorama();
+Promise.allSettled([skyAtlasLoad, landscapeLoad]).then(() => finishLoadingScreen());
+window.setTimeout(() => finishLoadingScreen(), 8000);
 scheduleNearbyStarPrefetch();
 attachSkyControls();
 populateBirthdayInputs();
@@ -674,6 +681,28 @@ function closeHelpOverlay() {
   helpOverlay.classList.add("hidden");
   helpButton?.setAttribute("aria-expanded", "false");
   helpLastFocus?.focus?.({ preventScroll: true });
+}
+
+function finishLoadingScreen() {
+  if (loadingScreenFinished) return;
+  loadingScreenFinished = true;
+
+  const remaining = Math.max(0, minimumLoadingScreenDuration - (performance.now() - loadingStartedAt));
+  window.setTimeout(() => {
+    if (!loadingScreen) {
+      document.body.classList.remove("is-loading");
+      return;
+    }
+
+    if (loadingStatus) loadingStatus.textContent = "준비가 끝났어요. 별빛 친구를 만나러 가요.";
+    loadingScreen.classList.add("ready");
+
+    window.setTimeout(() => {
+      loadingScreen.classList.add("is-leaving");
+      document.body.classList.remove("is-loading");
+      window.setTimeout(() => loadingScreen.setAttribute("hidden", ""), reducedMotion ? 20 : 540);
+    }, reducedMotion ? 220 : 620);
+  }, remaining);
 }
 
 function updateLandscapeControl() {
@@ -1005,22 +1034,26 @@ async function loadNearbyStars() {
 }
 
 function loadLandscapePanorama() {
-  const image = new Image();
-  horizonPanoramaImage = image;
-  image.decoding = "async";
-  image.onload = () => {
-    horizonPanoramaReady = true;
-    horizonPanoramaRenderer = createPanoramaRenderer(image);
-    horizonPanoramaAlphaMask = createPanoramaAlphaMask(image);
-    requestPaint();
-  };
-  image.onerror = () => {
-    horizonPanoramaReady = false;
-    horizonPanoramaRenderer = null;
-    horizonPanoramaAlphaMask = null;
-    requestPaint();
-  };
-  image.src = PANORAMA_IMAGE_URL;
+  return new Promise((resolve) => {
+    const image = new Image();
+    horizonPanoramaImage = image;
+    image.decoding = "async";
+    image.onload = () => {
+      horizonPanoramaReady = true;
+      horizonPanoramaRenderer = createPanoramaRenderer(image);
+      horizonPanoramaAlphaMask = createPanoramaAlphaMask(image);
+      requestPaint();
+      resolve(true);
+    };
+    image.onerror = () => {
+      horizonPanoramaReady = false;
+      horizonPanoramaRenderer = null;
+      horizonPanoramaAlphaMask = null;
+      requestPaint();
+      resolve(false);
+    };
+    image.src = PANORAMA_IMAGE_URL;
+  });
 }
 
 function createPanoramaAlphaMask(image) {
@@ -1952,7 +1985,7 @@ function paintSky(skyNow, perfNow) {
   const autoDimLandscape = selectedStarIsBehindLandscape(skyNow);
   setLandscapeAutoDimmed(autoDimLandscape);
   if (showLandscape) {
-    drawGroundScene(camera, perfNow, autoDimLandscape ? OCCLUDED_LANDSCAPE_OPACITY : 1);
+    drawGroundScene(camera, autoDimLandscape ? OCCLUDED_LANDSCAPE_OPACITY : 1);
   }
   if (showHorizonGrid) drawHorizon(camera);
 }
@@ -2380,7 +2413,7 @@ function drawHorizon(camera) {
   ctx.restore();
 }
 
-function drawGroundScene(camera, perfNow, opacity = 1) {
+function drawGroundScene(camera, opacity = 1) {
   if (drawPanoramaGround(camera, opacity)) return;
 
   drawTerrainBand(camera, distantRidgeAltitude, {
@@ -2401,7 +2434,6 @@ function drawGroundScene(camera, perfNow, opacity = 1) {
       [1, "rgba(7, 10, 7, 0.98)"],
     ],
   });
-  drawObservatorySilhouette(camera, perfNow, opacity);
 }
 
 function drawPanoramaGround(camera, opacity = 1) {
@@ -2683,97 +2715,6 @@ function nearRidgeAltitude(azimuth) {
 function angularHill(azimuth, center, widthDegrees, heightDegrees) {
   const distance = shortestAngle(azimuth - center);
   return Math.exp(-(distance * distance) / (2 * widthDegrees * widthDegrees)) * heightDegrees;
-}
-
-function drawObservatorySilhouette(camera, perfNow, opacity = 1) {
-  const hillAltitude = nearRidgeAltitude(OBSERVATORY_HILL_AZIMUTH) + 0.08;
-  const anchor = projectHorizontal({ azimuth: OBSERVATORY_HILL_AZIMUTH, altitude: hillAltitude }, camera, 240);
-  if (!anchor.visible) return;
-
-  const width = clamp((camera.focal * 0.34) / Math.max(anchor.depth, 0.28), isCoarsePointer() ? 92 : 118, isCoarsePointer() ? 156 : 226);
-  const height = width * 0.47;
-  const alpha = clamp((anchor.depth - 0.05) / 0.58, 0.62, 0.96);
-  const glow = perfNow ? 0.38 + Math.sin(perfNow / 1400) * 0.08 : 0.38;
-  const x = -width / 2;
-  const y = -height;
-
-  ctx.save();
-  ctx.translate(anchor.x, anchor.y + height * 0.08);
-  ctx.globalAlpha = alpha * opacity;
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-
-  const glassGradient = ctx.createLinearGradient(0, y, 0, 0);
-  glassGradient.addColorStop(0, "rgba(8, 15, 17, 0.96)");
-  glassGradient.addColorStop(0.46, "rgba(19, 35, 39, 0.92)");
-  glassGradient.addColorStop(1, "rgba(54, 66, 68, 0.9)");
-
-  ctx.fillStyle = "rgba(3, 6, 6, 0.5)";
-  ctx.beginPath();
-  ctx.ellipse(0, height * 0.08, width * 0.58, height * 0.16, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(18, 21, 21, 0.98)";
-  ctx.fillRect(x - width * 0.2, y + height * 0.08, width * 0.28, height * 0.92);
-
-  ctx.fillStyle = glassGradient;
-  ctx.fillRect(x + width * 0.05, y, width * 0.95, height);
-  ctx.fillStyle = "rgba(158, 159, 153, 0.3)";
-  ctx.fillRect(x + width * 0.05, y, width * 0.95, height * 0.08);
-
-  ctx.strokeStyle = "rgba(191, 197, 189, 0.26)";
-  ctx.lineWidth = Math.max(0.8, width * 0.006);
-  for (let index = 1; index < 6; index += 1) {
-    const px = x + width * (0.05 + index * 0.15);
-    ctx.beginPath();
-    ctx.moveTo(px, y + height * 0.08);
-    ctx.lineTo(px, 0);
-    ctx.stroke();
-  }
-  for (let index = 1; index < 3; index += 1) {
-    const py = y + height * (0.18 + index * 0.25);
-    ctx.beginPath();
-    ctx.moveTo(x + width * 0.05, py);
-    ctx.lineTo(x + width, py);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = `rgba(86, 142, 158, ${0.16 + glow * 0.22})`;
-  ctx.fillRect(x + width * 0.55, y + height * 0.22, width * 0.3, height * 0.28);
-  ctx.fillStyle = "rgba(13, 16, 17, 0.98)";
-  ctx.fillRect(x + width * 0.33, y + height * 0.62, width * 0.22, height * 0.38);
-  ctx.fillStyle = `rgba(245, 201, 106, ${glow})`;
-  ctx.fillRect(x + width * 0.39, y + height * 0.67, width * 0.04, height * 0.08);
-
-  ctx.fillStyle = "rgba(178, 170, 153, 0.92)";
-  ctx.fillRect(x + width * 0.26, y + height * 0.42, width * 0.46, height * 0.09);
-  ctx.fillStyle = "rgba(235, 241, 230, 0.94)";
-  ctx.font = `700 ${Math.max(10, width * 0.088)}px system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("ASTROCAMP", x + width * 0.5, y + height * 0.36);
-
-  ctx.strokeStyle = "rgba(235, 241, 230, 0.9)";
-  ctx.lineWidth = Math.max(1, width * 0.01);
-  ctx.beginPath();
-  ctx.moveTo(x + width * 0.25, y + height * 0.36);
-  ctx.lineTo(x + width * 0.31, y + height * 0.26);
-  ctx.lineTo(x + width * 0.38, y + height * 0.22);
-  ctx.moveTo(x + width * 0.31, y + height * 0.26);
-  ctx.lineTo(x + width * 0.29, y + height * 0.45);
-  ctx.moveTo(x + width * 0.31, y + height * 0.34);
-  ctx.lineTo(x + width * 0.24, y + height * 0.5);
-  ctx.moveTo(x + width * 0.31, y + height * 0.34);
-  ctx.lineTo(x + width * 0.37, y + height * 0.5);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(5, 8, 8, 0.96)";
-  ctx.fillRect(x + width * 0.16, y + height * 0.51, width * 0.76, height * 0.07);
-  ctx.fillStyle = `rgba(245, 201, 106, ${0.26 + glow * 0.36})`;
-  ctx.fillRect(x + width * 0.12, y + height * 0.78, width * 0.08, height * 0.05);
-  ctx.fillRect(x + width * 0.78, y + height * 0.18, width * 0.1, height * 0.045);
-
-  ctx.restore();
 }
 
 function drawFriendStar(star, horizontal, active, perfNow, camera) {
